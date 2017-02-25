@@ -51,63 +51,143 @@ func IsInitialized(path string) bool {
 }
 
 //Init initializes service defaults including a signing key pair for an agent
-func Init(path string, agent Agent) (service *Service, err error) {
-	p := path + "/" + DirectoryName
-	err = os.MkdirAll(p, os.ModePerm)
+func Init(path string, agent Agent) (return_svc *Service, err error) {
+	service_path := path + "/" + DirectoryName
+	err = os.MkdirAll(service_path, os.ModePerm)
 	if err != nil {
 		return
 	}
-	s := Service{
+	service := Service{
 		Settings: Config{
 			Port:           DefaultPort,
 			PeerModeAuthor: true,
 		},
 		DefaultAgent: agent,
-		Path:         p,
+		Path:         service_path,
 	}
 
-	err = writeToml(p, SysFileName, s.Settings, false)
+	err = writeToml(service_path, SysFileName, service.Settings, false)
 	if err != nil {
 		return
 	}
 
-	writeFile(p, AgentFileName, []byte(agent))
+	writeFile(service_path, AgentFileName, []byte(agent))
 	if err != nil {
 		return
 	}
 
-	k, err := GenKeys(p)
+	key, err := GenKeys(service_path)
 	if err != nil {
 		return
 	}
-	s.DefaultKey = k
+	service.DefaultKey = key
 
-	service = &s
+	return_svc = &service
 	return
 }
 
-func LoadService(path string) (service *Service, err error) {
+func LoadService(path string) (return_svc *Service, err error) {
 	agent, key, err := LoadSigner(path)
 	if err != nil {
 		return
 	}
-	s := Service{
+	service := Service{
 		Path:         path,
 		DefaultAgent: agent,
 		DefaultKey:   key,
 	}
 
-	_, err = toml.DecodeFile(path+"/"+SysFileName, &s.Settings)
+	_, err = toml.DecodeFile(path+"/"+SysFileName, &service.Settings)
 	if err != nil {
 		return
 	}
 
-	service = &s
+	return_svc = &service
+	return
+}
+
+// Load unmarshals a holochain structure for the named chain in a service
+func (service *Service) Load(name string) (return_ptr *Holochain, err error) {
+	var new_chain Holochain
+
+	path := service.Path + "/" + name
+
+	_, err = toml.DecodeFile(path+"/"+DNAFileName, &new_chain)
+	if err != nil {
+		return
+	}
+	new_chain.path = path
+
+	// try and get the agent/private_key from the holochain instance
+	agent, private_key, err := LoadSigner(path)
+	if err != nil {
+		// get the default if not available
+		agent, private_key, err = LoadSigner(filepath.Dir(path))
+	}
+	if err != nil {
+		return
+	}
+	new_chain.agent = agent
+	new_chain.privKey = private_key
+
+	new_chain.store, err = CreatePersister(BoltPersisterName, path+"/"+StoreFileName)
+	if err != nil {
+		return
+	}
+
+	err = new_chain.store.Init()
+	if err != nil {
+		return
+	}
+
+	return_ptr = &new_chain
+	return
+}
+
+// IsConfigured checks a directory for holochain configuration files
+// (working path)/<service name>/dna.conf // from parameter and constant
+// (working path)/<service name>/chain.db // same parameter and another constant
+// (working path)/<service name>/<service name> // for any not SelfDefining
+// (working path)/<service name>/<schema code>  // path from service dir
+// doesn't this belong in service.go ?
+func (service *Service) IsConfigured(name string) (hol_chain *Holochain, err error) {
+	path := service.Path + "/" + name
+	dna_path := path + "/" + DNAFileName
+	if !fileExists(dna_path) {
+		return nil, errors.New("missing " + dna_path)
+	}
+	store_path := path + "/" + StoreFileName
+	if !fileExists(store_path) {
+		return nil, errors.New("chain store missing: " + store_path)
+	}
+
+	hol_chain, err = service.Load(name)
+	if err != nil {
+		return
+	}
+
+  // maybe move to schema.go as CheckSchemas(hol_chain.Schemas)
+  // or should it be LoadSchemas, but it just looks for files below
+  // for now there is always one of these configured in dna.conf
+  // myData (the Type) -> "zygo" which is a SelfDefiningType
+  // JSON is also defined, unclear if it is fully plumbed
+	for _, schema := range hol_chain.Schemas {
+		schema_file := schema.Schema
+		if !SelfDescribingSchema(schema_file) {
+			if !fileExists(path + "/" + schema_file) {
+				return nil, errors.New("DNA specified schema missing: " + schema_file)
+			}
+		}
+		code_file := schema.Code
+		if !fileExists(path + "/" + code_file) {
+			return nil, errors.New("DNA specified code missing: " + code_file)
+		}
+	}
 	return
 }
 
 // ConfiguredChains returns a list of the configured chains for the given service
-func (s *Service) ConfiguredChains() (chains map[string]*Holochain, err error) {
+func (service *Service) ConfiguredChains() (chains map[string]*Holochain, err error) {
 	files, err := ioutil.ReadDir(s.Path)
 	if err != nil {
 		return
@@ -115,11 +195,12 @@ func (s *Service) ConfiguredChains() (chains map[string]*Holochain, err error) {
 	chains = make(map[string]*Holochain)
 	for _, f := range files {
 		if f.IsDir() {
-			h, err := s.IsConfigured(f.Name())
+			hol_chain, err := service.IsConfigured(f.Name())
 			if err == nil {
-				chains[f.Name()] = h
+				chains[f.Name()] = hol_chain
 			}
 		}
 	}
 	return
 }
+

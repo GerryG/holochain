@@ -11,16 +11,31 @@ import (
 	//"github.com/google/uuid"
 )
 
+// sets these in app.Before
 var uninitialized error
 var initialized bool
 
+// setup the cli app:
+// hc [flags] [command]
+//   flags: app.Flags
+//          verbose (bool)
+//   command: app.Commands
+//          gen init dump test status call
+//   subs gen:
+//      from dev keys chain
+// No command: app.Action
 func SetupApp() (app *cli.App) {
+  // the command implementations are here (defined below)
 	app = cli.NewApp()
 	app.Name = "hc"
 	app.Usage = "holochain peer command line interface"
 	app.Version = "0.0.1"
 	var verbose bool
+  // set in app.Before
+  // add option for userPath and/or root
+  // userPaht/holo.DirectoryName, u.HomeDir
 	var root, userPath string
+  // Initialise the holochain service (unloaded)
 	var service *holo.Service
 
 	holo.Register()
@@ -92,6 +107,7 @@ func SetupApp() (app *cli.App) {
 				{
 					Name:      "chain",
 					Aliases:   []string{"c"},
+          // what's a genesis block?
 					Usage:     "generate the genesis blocks from the configuration and keys",
 					ArgsUsage: "holochain-name",
 					Action: func(c *cli.Context) error {
@@ -233,6 +249,7 @@ func SetupApp() (app *cli.App) {
 		},
 	}
 
+  // initialize it if we can, sets initialized, uninitialized (the error)
 	app.Before = func(c *cli.Context) error {
 		if verbose {
 			fmt.Printf("app version: %s; Holochain lib version %s\n ", app.Version, holo.Version)
@@ -243,14 +260,16 @@ func SetupApp() (app *cli.App) {
 		}
 		userPath = u.HomeDir
 		root = userPath + "/" + holo.DirectoryName
-		if initialized = holo.IsInitialized(userPath); !initialized {
-			uninitialized = errors.New("service not initialized, run 'hc init'")
-		} else {
+		initialized = holo.IsInitialized(userPath)
+		if initialized {
 			service, err = holo.LoadService(root)
+		} else {
+			uninitialized = errors.New("service not initialized, run 'hc init'")
 		}
 		return err
 	}
 
+  // default action? (when no subcommand specified)
 	app.Action = func(c *cli.Context) error {
 		if !initialized {
 			cli.ShowAppHelp(c)
@@ -295,13 +314,13 @@ func listChains(s *holo.Service) {
 	chains, _ := s.ConfiguredChains()
 	if len(chains) > 0 {
 		fmt.Println("installed holochains: ")
-		for k := range chains {
-			id, err := chains[k].ID()
+		for key := range chains {
+			id, err := chains[key].ID()
 			var sid = "<not-started>"
 			if err == nil {
 				sid = id.String()
 			}
-			fmt.Println("    ", k, sid)
+			fmt.Println("    ", key, sid)
 		}
 	} else {
 		fmt.Println("no installed chains")

@@ -46,13 +46,13 @@ type BoltPersister struct {
 }
 
 // Name returns the data store name
-func (bp *BoltPersister) Name() string {
+func (persister *BoltPersister) Name() string {
 	return BoltPersisterName
 }
 
 // Open opens the data store
-func (bp *BoltPersister) Open() (err error) {
-	bp.db, err = bolt.Open(bp.path, 0600, &bolt.Options{Timeout: 1 * time.Second})
+func (persister *BoltPersister) Open() (err error) {
+	persister.db, err = bolt.Open(persister.path, 0600, &bolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
 		return
 	}
@@ -60,15 +60,15 @@ func (bp *BoltPersister) Open() (err error) {
 }
 
 // Close closes the data store
-func (bp *BoltPersister) Close() {
-	bp.db.Close()
-	bp.db = nil
+func (persister *BoltPersister) Close() {
+	persister.db.Close()
+	persister.db = nil
 }
 
 // Init opens the store (if it isn't already open) and initializes buckets
-func (bp *BoltPersister) Init() (err error) {
-	if bp.db == nil {
-		err = bp.Open()
+func (persister *BoltPersister) Init() (err error) {
+	if persister.db == nil {
+		err = persister.Open()
 	}
 	if err != nil {
 		return
@@ -76,12 +76,12 @@ func (bp *BoltPersister) Init() (err error) {
 
 	defer func() {
 		if err != nil {
-			bp.db.Close()
-			bp.db = nil
+			persister.db.Close()
+			persister.db = nil
 		}
 	}()
 	var initialized bool
-	err = bp.db.View(func(tx *bolt.Tx) error {
+	err = persister.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(MetaBucket))
 		initialized = b != nil
 		return nil
@@ -90,7 +90,7 @@ func (bp *BoltPersister) Init() (err error) {
 		return
 	}
 	if !initialized {
-		err = bp.db.Update(func(tx *bolt.Tx) (err error) {
+		err = persister.db.Update(func(tx *bolt.Tx) (err error) {
 			_, err = tx.CreateBucketIfNotExists([]byte(EntryBucket))
 			if err != nil {
 				return
@@ -108,8 +108,8 @@ func (bp *BoltPersister) Init() (err error) {
 }
 
 // Get returns a header, and (optionally) it's entry if getEntry is true
-func (bp *BoltPersister) Get(hash Hash, getEntry bool) (header Header, entry interface{}, err error) {
-	err = bp.db.View(func(tx *bolt.Tx) error {
+func (persister *BoltPersister) Get(hash Hash, getEntry bool) (header Header, entry interface{}, err error) {
+	err = persister.db.View(func(tx *bolt.Tx) error {
 		hb := tx.Bucket([]byte(HeaderBucket))
 		eb := tx.Bucket([]byte(EntryBucket))
 		header, entry, err = get(hb, eb, hash[:], getEntry)
@@ -118,53 +118,53 @@ func (bp *BoltPersister) Get(hash Hash, getEntry bool) (header Header, entry int
 	return
 }
 
-// GetMeta returns meta data
-func (bp *BoltPersister) GetMeta(key string) (data []byte, err error) {
-	err = bp.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(MetaBucket))
-		data = b.Get([]byte(key))
+// GetMeta returns the Hash stored at key
+func (persister *BoltPersister) GetMeta(key string) (hash []byte, err error) {
+	err = persister.db.View(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(MetaBucket))
+		hash = bkt.Get([]byte(key))
 		return nil
 	})
 	return
 }
 
-// PutMeta sets meta data
-func (bp *BoltPersister) PutMeta(key string, value []byte) (err error) {
-	err = bp.db.Update(func(tx *bolt.Tx) (err error) {
-		b := tx.Bucket([]byte(MetaBucket))
-		err = b.Put([]byte(key), value)
+// PutMeta stores a Hash value at key
+func (persister *BoltPersister) PutMeta(key string, value []byte) (err error) {
+	err = persister.db.Update(func(tx *bolt.Tx) (err error) {
+		bkt := tx.Bucket([]byte(MetaBucket))
+		err = bkt.Put([]byte(key), value)
 		return err
 	})
 	return
 }
 
 // Remove deletes all data in the datastore
-func (bp *BoltPersister) Remove() (err error) {
-	os.Remove(bp.path)
-	bp.db = nil
+func (persister *BoltPersister) Remove() (err error) {
+	os.Remove(persister.path)
+	persister.db = nil
 	return nil
 }
 
 // NewBoltPersister returns a Bolt implementation of the Persister type
 // always return no error because in this case any errors would happen at Init or Open time
-func NewBoltPersister(path string) (p Persister, err error) {
-	var bp BoltPersister
-	bp.path = path
-	p = &bp
+func NewBoltPersister(path string) (pptr Persister, err error) {
+	var persister BoltPersister
+	persister.path = path
+	pptr = &persister
 	return
 }
 
 // DB returns the bolt db to give clients direct accesses to the bolt store
-func (bp *BoltPersister) DB() *bolt.DB {
-	return bp.db
+func (persister *BoltPersister) DB() *bolt.DB {
+	return persister.db
 }
 
 type PersisterFactory func(config string) (Persister, error)
 
 var persistorFactories = make(map[string]PersisterFactory)
 
-// RegisterBultinPersisters adds the built in persister types to the factory hash
-func RegisterBultinPersisters() {
+// RegisterBuiltinPersisters adds the built in persister types to the factory hash
+func RegisterBuiltinPersisters() {
 	RegisterPersister(BoltPersisterName, NewBoltPersister)
 }
 

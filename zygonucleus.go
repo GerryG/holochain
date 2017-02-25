@@ -129,7 +129,7 @@ func NewZygoNucleus(code string) (v Nucleus, err error) {
 				i.Schema = InterfaceSchemaType(t.Val)
 			default:
 				return zygo.SexpNull,
-					errors.New("1st argument of expose should be string")
+					errors.New("2nd argument of expose should be an integer")
 			}
 
 			err := z.expose(i)

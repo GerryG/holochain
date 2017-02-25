@@ -11,6 +11,9 @@ import (
 )
 
 // SHA256 hash of Entry's Content
+// Key (Hash) -> Value (Entry)
+// Key (Hash) -> Value (Header)  Is there right? Any more?
+// SHA256(entry.Marshal) ?
 type Hash [32]byte
 
 // String encodes a hash to a human readable string

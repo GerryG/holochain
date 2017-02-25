@@ -19,24 +19,24 @@ func Test(t *testing.T) {
 	Register()
 }
 
-func TestNew(t *testing.T) {
+func TestNewHolochain(t *testing.T) {
 	var key ecdsa.PrivateKey
 
-	Convey("New should fill Holochain struct with provided values and new UUID", t, func() {
-		h := New("Joe", &key, "some/path")
+	Convey("NewHolochain should fill Holochain struct with provided values and new UUID", t, func() {
+		h := NewHolochain("Joe", &key, "some/path")
 		nID := string(uuid.NodeID())
 		So(nID, ShouldEqual, string(h.Id.NodeID()))
 		So(h.agent, ShouldEqual, "Joe")
 		So(h.privKey, ShouldEqual, &key)
 		So(h.path, ShouldEqual, "some/path")
 	})
-	Convey("New with EntryDefs should fill them", t, func() {
-		d1 := EntryDef{Name: "myData1", Schema: "zygo", Code: "valid_myData1.zy"}
-		d2 := EntryDef{Name: "myData2", Schema: "zygo", Code: "valid_myData2.zy"}
+	Convey("NewHolochain with Schemas should fill them", t, func() {
+		d1 := Schema{Name: "myData1", Schema: "zygo", Code: "valid_myData1.zy"}
+		d2 := Schema{Name: "myData2", Schema: "zygo", Code: "valid_myData2.zy"}
 
-		h := New("Joe", &key, "some/path", d1, d2)
-		So(h.EntryDefs[0].Name, ShouldEqual, "myData1")
-		So(h.EntryDefs[1].Name, ShouldEqual, "myData2")
+		h := NewHolochain("Joe", &key, "some/path", d1, d2)
+		So(h.Schemas[0].Name, ShouldEqual, "myData1")
+		So(h.Schemas[1].Name, ShouldEqual, "myData2")
 	})
 
 }
@@ -76,7 +76,7 @@ func TestGenDev(t *testing.T) {
 	})
 }
 
-func TestNewEntry(t *testing.T) {
+func TestAddEntry(t *testing.T) {
 	d, s := setupTestService()
 	defer cleanupTestDir(d)
 	n := "test"
@@ -91,7 +91,7 @@ func TestNewEntry(t *testing.T) {
 	now := time.Unix(1, 1) // pick a constant time so the test will always work
 
 	e := GobEntry{C: myData}
-	headerHash, header, err := h.NewEntry(now, "myData", &e)
+	headerHash, header, err := h.AddEntry(now, "myData", &e)
 	Convey("parameters passed in should be in the header", t, func() {
 		So(err, ShouldBeNil)
 		So(header.Time == now, ShouldBeTrue)
@@ -105,7 +105,7 @@ func TestNewEntry(t *testing.T) {
 	// can't check against a fixed hash because signature created each time test runs is
 	// different (though valid) so the header will hash to a different value
 	Convey("the returned header hash is the SHA256 of the byte encoded header", t, func() {
-		b, _ := ByteEncoder(&header)
+		b, _ := GobEncode(&header)
 		hh := Hash(sha256.Sum256(b))
 		So(headerHash, ShouldEqual, hh)
 	})
@@ -133,7 +133,7 @@ func TestNewEntry(t *testing.T) {
 		So(s2, ShouldEqual, s1)
 
 		Convey("and the returned header should hash to the same value", func() {
-			b, _ := ByteEncoder(&h2)
+			b, _ := GobEncode(&h2)
 			hh := Hash(sha256.Sum256(b))
 			So(headerHash, ShouldEqual, hh)
 		})
@@ -210,7 +210,7 @@ func TestGenChain(t *testing.T) {
 		var h2 Holochain
 		_, err = toml.DecodeFile(h.path+"/"+DNAFileName, &h2)
 		So(err, ShouldBeNil)
-		So(h2.EntryDefs[0].CodeHash, ShouldEqual, h.EntryDefs[0].CodeHash)
+		So(h2.Schemas[0].CodeHash, ShouldEqual, h.Schemas[0].CodeHash)
 	})
 
 	Convey("before GenChain call ID call should fail", t, func() {
@@ -268,7 +268,7 @@ func TestWalk(t *testing.T) {
 	myData := `(message (from "art") (to "eric") (contents "test"))`
 	now := time.Unix(1, 1) // pick a constant time so the test will always work
 	e := GobEntry{C: myData}
-	_, _, err = h.NewEntry(now, "myData", &e)
+	_, _, err = h.AddEntry(now, "myData", &e)
 
 	Convey("walk should call a function on all the elements of a chain", t, func() {
 
@@ -300,7 +300,7 @@ func TestValidate(t *testing.T) {
 	myData := `(message (from "art") (to "eric") (contents "test"))`
 	now := time.Unix(1, 1) // pick a constant time so the test will always work
 	e := GobEntry{C: myData}
-	_, _, err = h.NewEntry(now, "myData", &e)
+	_, _, err = h.AddEntry(now, "myData", &e)
 
 	Convey("validate should check the hashes of the headers, and optionally of the entries", t, func() {
 		//	Convey("This isn't yet fully implemented", nil)

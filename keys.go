@@ -34,7 +34,7 @@ func UnmarshalPublicKey(path string, file string) (key *ecdsa.PublicKey, err err
 	return key, err
 }
 
-// MarshalPrivateKey stores a PublicKey to a serialized x509 format file
+// MarshalPrivateKey stores a PrivateKey to a serialized x509 format file
 func MarshalPrivateKey(path string, file string, key *ecdsa.PrivateKey) error {
 	k, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
@@ -44,7 +44,7 @@ func MarshalPrivateKey(path string, file string, key *ecdsa.PrivateKey) error {
 	return err
 }
 
-// UnmarshalPrivateKey loads a PublicKey from the serialized x509 format file
+// UnmarshalPrivateKey loads a PrivateKey from the serialized x509 format file
 func UnmarshalPrivateKey(path string, file string) (key *ecdsa.PrivateKey, err error) {
 	k, err := readFile(path, file)
 	if err != nil {
