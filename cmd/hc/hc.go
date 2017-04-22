@@ -88,8 +88,8 @@ func setupApp() (app *cli.App) {
 				},
 			},
 			Action: func(c *cli.Context) error {
-				srcPath := c.Args().First()
-				if srcPath == "" {
+				cloneSrcPath := c.Args().First()
+				if cloneSrcPath == "" {
 					return errors.New("clone: missing required source path argument")
 				}
 				if len(c.Args()) == 1 {
@@ -102,10 +102,10 @@ func setupApp() (app *cli.App) {
 						return e
 					}
 				}
-				h, err := service.Clone(srcPath, root+"/"+name, true)
+				h, err := service.Clone(cloneSrcPath, root+"/"+name, true)
 				if err == nil {
 					if verbose {
-						fmt.Printf("cloned %s from %s with new id: %v\n", name, srcPath, h.Id)
+						fmt.Printf("cloned %s from %s with new id: %v\n", name, cloneSrcPath, h.Id)
 					}
 				}
 				return err
@@ -328,18 +328,18 @@ func setupApp() (app *cli.App) {
 			ArgsUsage: "src-path holochain-name",
 			Usage:     "joins a holochain by copying an instance from a source and generating genesis blocks",
 			Action: func(c *cli.Context) error {
-				srcPath := c.Args().First()
-				if srcPath == "" {
+				joinSrcPath := c.Args().First()
+				if joinSrcPath == "" {
 					return errors.New("join: missing required source path argument")
 				}
 				if len(c.Args()) == 1 {
 					return errors.New("join: missing required holochain-name argument")
 				}
 				name := c.Args()[1]
-				_, err := service.Clone(srcPath, root+"/"+name, false)
+				_, err := service.Clone(joinSrcPath, root+"/"+name, false)
 				if err == nil {
 					if verbose {
-						fmt.Printf("joined %s from %s\n", name, srcPath)
+						fmt.Printf("joined %s from %s\n", name, joinSrcPath)
 					}
 					err = genChain(service, name)
 				}
@@ -441,7 +441,7 @@ func setupApp() (app *cli.App) {
 		if debug {
 			os.Setenv("DEBUG", "1")
 		}
-		holo.Initialize()
+		holo.Initialize(holo.InitializeProtocols)
 		if verbose {
 			fmt.Printf("hc version %s \n", app.Version)
 		}
@@ -540,6 +540,8 @@ func mkErr(etext string, code int) (int, error) {
 	return code, errors.New(etext)
 }
 
+// service -> Load(name) -> Holochain -> [chain]
+// chain.genDNAHashes
 func genChain(service *holo.Service, name string) error {
 	h, err := service.Load(name)
 	if err != nil {

@@ -155,8 +155,8 @@ func (dht *DHT) GetPuts(since int) (puts []Put, err error) {
 	return
 }
 
-// GetGossiper loads returns last known index of the gossiper, and adds them if not didn't exist before
-func (dht *DHT) GetGossiper(id peer.ID) (idx int, err error) {
+// GetGossiperIdx loads returns last known index of the gossiper, and adds them if not didn't exist before
+func (dht *DHT) GetGossiperIdx(id peer.ID) (idx int, err error) {
 	key := "peer:" + peer.IDB58Encode(id)
 	err = dht.db.View(func(tx *buntdb.Tx) error {
 		var e error
@@ -196,8 +196,8 @@ func (dht *DHT) FindGossiper() (g *Gossiper, err error) {
 	return
 }
 
-// UpdateGossiper updates a gossiper
-func (dht *DHT) UpdateGossiper(id peer.ID, count int) (err error) {
+// UpdateGossiperIdx updates a gossiper
+func (dht *DHT) UpdateGossiperIdx(id peer.ID, count int) (err error) {
 	dht.glog.Logf("updaing %v with %d", id, count)
 	err = dht.db.Update(func(tx *buntdb.Tx) error {
 		key := "peer:" + peer.IDB58Encode(id)
@@ -232,7 +232,7 @@ func GossipReceiver(h *Holochain, m *Message) (response interface{}, err error) 
 
 			// check to see what we know they said, and if our record is less
 			// that where they are currently at, gossip back
-			idx, e := h.dht.GetGossiper(m.From)
+			idx, e := h.dht.GetGossiperIdx(m.From)
 			if e == nil && idx < t.MyIdx {
 				dht.glog.Logf("we only have %d of %d from %v so gossiping back", idx, t.MyIdx, m.From)
 				go func() {
@@ -274,7 +274,7 @@ func (dht *DHT) gossipWith(id peer.ID, after int) (err error) {
 	// and also run their puts
 	count := len(puts)
 	if count > 0 {
-		err = dht.UpdateGossiper(id, count)
+		err = dht.UpdateGossiperIdx(id, count)
 		dht.glog.Logf("running %d puts", count)
 		for _, p := range puts {
 			f, e := p.M.Fingerprint()
