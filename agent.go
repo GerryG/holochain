@@ -50,6 +50,8 @@ func (a *IPFSAgent) PubKey() ic.PubKey {
 	return a.priv.GetPublic()
 }
 
+// This is where the actual private key handling is.
+// TODO: Generate and manage keys externally (e.g. hc.go) wherever they get stored.
 func (a *IPFSAgent) GenKeys() (err error) {
 	var priv ic.PrivKey
 	priv, _, err = ic.GenerateEd25519Key(rand.Reader)
