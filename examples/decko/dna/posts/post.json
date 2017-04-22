@@ -1,0 +1,19 @@
+{
+	"title": "Message Schema",
+	"type": "object",
+	"properties": {
+		"name": {
+			"type": "string"
+		},
+		"type": {
+			"type": "string"
+		},
+		"content": {
+			"type": "string"
+		}
+		"updateTimestamp": {
+			"type": "string"
+		},
+	},
+    "required": ["name", "type", "updateTimestamp"]
+}

@@ -1,0 +1,46 @@
+{
+    "Version": 0,
+    "Id": "00000000-0000-0000-0000-000000000000",
+    "Name": "decko",
+    "Properties": {
+        "name": "Decko",
+        "purpose": "Integrate holochains with Decko Platform",
+        "language": "en",
+        "initial_admin": "gerry@wagn.org"
+    },
+    "PropertiesSchema": "properties_schema.json",
+    "HashType": "sha2-256",
+    "BasedOn": {
+        "H": null
+    },
+    "Zomes": [
+        {
+          "Name": "decko",
+          "Description": "decko code",
+          "NucleusType": "js",
+          "Code": "decko.js",
+          "CodeHash": {
+              "H": null
+          }
+        },
+        {
+          "Name": "posts",
+          "Description": "Posts controller",
+          "NucleusType": "js",
+          "Code": "post.js",
+          "CodeHash": {
+              "H": null
+          },
+          "Entries": [
+            {
+              "Name": "post",
+              "DataFormat": "json",
+              "Schema": "post.json",
+              "SchemaHash": {
+                  "H": null
+              }
+            }
+          ]
+        },
+    ]
+}
