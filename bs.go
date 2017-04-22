@@ -71,7 +71,7 @@ func (h *Holochain) checkBSResponses(nodes []BSResp) (err error) {
 				if r.Req.NodeID != myNodeID {
 					h.dht.dlog.Logf("discovered peer: %s (%v)", r.Req.NodeID, addr)
 					h.node.Host.Peerstore().AddAddr(id, addr, pstore.PermanentAddrTTL)
-					err = h.dht.UpdateGossiper(id, 0)
+					err = h.dht.UpdateGossiperIdx(id, 0)
 
 				}
 
