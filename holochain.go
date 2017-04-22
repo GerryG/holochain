@@ -114,7 +114,7 @@ func Infof(m string, args ...interface{}) {
 }
 
 // Initialize function that must be called once at startup by any client app
-func Initialize() {
+func Initialize(init_protocols func()) {
 	gob.Register(Header{})
 	gob.Register(AgentEntry{})
 	gob.Register(Hash{})
@@ -142,6 +142,10 @@ func Initialize() {
 
 	rand.Seed(time.Now().Unix()) // initialize global pseudo random generator
 
+	init_protocols()
+}
+
+func InitializeProtocols() {
 	DHTProtocol = Protocol{protocol.ID("/hc-dht/0.0.0"), DHTReceiver}
 	ValidateProtocol = Protocol{protocol.ID("/hc-validate/0.0.0"), ValidateReceiver}
 	GossipProtocol = Protocol{protocol.ID("/hc-gossip/0.0.0"), GossipReceiver}
@@ -589,9 +593,9 @@ func (s *Service) Clone(srcPath string, root string, new bool) (hP *Holochain, e
 		}
 
 		// copy any UI files
-		srcUIPath := srcPath + "/" + ChainUIDir
-		if dirExists(srcUIPath) {
-			if err = CopyDir(srcUIPath, h.UIPath()); err != nil {
+		srcUiPath := srcPath + "/" + ChainUIDir
+		if dirExists(srcUiPath) {
+			if err = CopyDir(srcUiPath, h.UIPath()); err != nil {
 				return
 			}
 		}
@@ -972,6 +976,7 @@ function genesis() {return true}
 }
 
 // gen calls a make function which should build the holochain structure and supporting files
+// internal genesis creating method, "initialized" a chain so it can services.
 func gen(root string, makeH func(root string) (hP *Holochain, err error)) (h *Holochain, err error) {
 	if dirExists(root) {
 		return nil, mkErr(root + " already exists")
