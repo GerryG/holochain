@@ -104,7 +104,6 @@ func Initialize(init_protocols func()) {
 	infoLog.New(nil)
 	debugLog.New(nil)
 
-	Debug("init gobs ")
 	gob.Register(Header{})
 	gob.Register(AgentEntry{})
 	gob.Register(Hash{})
@@ -124,9 +123,7 @@ func Initialize(init_protocols func()) {
 	gob.Register(LinkQueryResp{})
 	gob.Register(TaggedHash{})
 
-	Info("init gobs2")
 	RegisterBultinNucleii()
-	Info("init gobs3")
 
 	rand.Seed(time.Now().Unix()) // initialize global pseudo random generator
 
@@ -490,10 +487,10 @@ func (h *Holochain) GenChain() (headerHash Hash, err error) {
 }
 
 // Clone copies DNA files from a source directory
-func (s *Service) Clone(srcPath string, root string, new bool) (hP *Holochain, err error) {
+func (s *Service) Clone(clonedPath string, root string, new bool) (hP *Holochain, err error) {
 	hP, err = gen(root, func(root string) (hP *Holochain, err error) {
 
-		srcDNAPath := srcPath + "/" + ChainDNADir
+		srcDNAPath := clonedPath + "/" + ChainDNADir
 		format, err := findDNA(srcDNAPath)
 		if err != nil {
 			return
@@ -541,7 +538,7 @@ func (s *Service) Clone(srcPath string, root string, new bool) (hP *Holochain, e
 		}
 
 		// copy any UI files
-		srcUiPath := srcPath + "/" + ChainUIDir
+		srcUiPath := clonedPath + "/" + ChainUIDir
 		if dirExists(srcUiPath) {
 			if err = CopyDir(srcUiPath, h.UIPath()); err != nil {
 				return
@@ -549,7 +546,7 @@ func (s *Service) Clone(srcPath string, root string, new bool) (hP *Holochain, e
 		}
 
 		// copy any test files
-		srcTestDir := srcPath + "/" + ChainTestDir
+		srcTestDir := clonedPath + "/" + ChainTestDir
 		if dirExists(srcTestDir) {
 			if err = CopyDir(srcTestDir, root+"/"+ChainTestDir); err != nil {
 				return

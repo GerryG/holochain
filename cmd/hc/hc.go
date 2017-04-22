@@ -88,8 +88,8 @@ func setupApp() (app *cli.App) {
 				},
 			},
 			Action: func(c *cli.Context) error {
-				srcPath := c.Args().First()
-				if srcPath == "" {
+				cloneSrcPath := c.Args().First()
+				if cloneSrcPath == "" {
 					return errors.New("clone: missing required source path argument")
 				}
 				if len(c.Args()) == 1 {
@@ -102,7 +102,7 @@ func setupApp() (app *cli.App) {
 						return e
 					}
 				}
-				h, err := service.Clone(srcPath, root+"/"+name, true)
+				h, err := service.Clone(cloneSrcPath, root+"/"+name, true)
 				if err == nil {
 					if verbose {
 						fmt.Printf("cloned %s from %s with new id: %v\n", name, srcPath, h.ID)
