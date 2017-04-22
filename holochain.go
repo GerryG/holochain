@@ -97,7 +97,6 @@ func Initialize(init_protocols func()) {
 	infoLog.New(nil)
 	debugLog.New(nil)
 
-	Debug("init gobs ")
 	gob.Register(Header{})
 	gob.Register(AgentEntry{})
 	gob.Register(Hash{})
@@ -117,9 +116,7 @@ func Initialize(init_protocols func()) {
 	gob.Register(LinkQueryResp{})
 	gob.Register(TaggedHash{})
 
-	Info("init gobs2")
 	RegisterBultinNucleii()
-	Info("init gobs3")
 
 	rand.Seed(time.Now().Unix()) // initialize global pseudo random generator
 
