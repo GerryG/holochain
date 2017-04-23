@@ -75,7 +75,7 @@ func (h *Holochain) ZomePath(z *Zome) string {
 	return h.DNAPath() + "/" + z.Name
 }
 
-func (h *Holochain) PrepareZomes(zomes map[string]Zome) (err error) {
+func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
 	for _, z := range zomes {
 		zpath := h.ZomePath(&z)
 		if !fileExists(zpath + "/" + z.Code) {
@@ -83,7 +83,7 @@ func (h *Holochain) PrepareZomes(zomes map[string]Zome) (err error) {
 			err = errors.New("DNA specified code file missing: " + z.Code)
 			return
 		}
-		for name, e := range z.Entries {
+		for i, e := range z.Entries {
 			sc := e.Schema
 			if sc != "" {
 				if !fileExists(zpath + "/" + sc) {
@@ -94,7 +94,7 @@ func (h *Holochain) PrepareZomes(zomes map[string]Zome) (err error) {
 					if err = e.BuildJSONSchemaValidator(zpath); err != nil {
 						return
 					}
-					z.Entries[name] = e
+					z.Entries[i] = e
 				}
 			}
 		}
