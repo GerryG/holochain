@@ -60,7 +60,7 @@ type Holochain struct {
 	PropertiesSchema string
 	HashType         string
 	BasedOn          Hash // holochain hash for base schemas and code
-	Zomes            []Zome
+	Zomes            map[string]Zome
 	RequiresVersion  int
 	//---- private values not serialized; initialized on Load
 	id             peer.ID // this is hash of the id, also used in the node
@@ -101,6 +101,10 @@ func Infof(m string, args ...interface{}) {
 
 // Initialize function that must be called once at startup by any client app
 func Initialize(init_protocols func()) {
+	infoLog.New(nil)
+	debugLog.New(nil)
+
+	Debug("init gobs ")
 	gob.Register(Header{})
 	gob.Register(AgentEntry{})
 	gob.Register(Hash{})
@@ -120,10 +124,9 @@ func Initialize(init_protocols func()) {
 	gob.Register(LinkQueryResp{})
 	gob.Register(TaggedHash{})
 
+	Info("init gobs2")
 	RegisterBultinNucleii()
-
-	infoLog.New(nil)
-	debugLog.New(nil)
+	Info("init gobs3")
 
 	rand.Seed(time.Now().Unix()) // initialize global pseudo random generator
 
@@ -565,9 +568,9 @@ func (s *Service) Clone(srcPath string, root string, new bool) (hP *Holochain, e
 			}
 		}
 
-		for _, z := range h.Zomes {
+		for zname, z := range h.Zomes {
 			var bs []byte
-			srczpath := srcDNAPath + "/" + z.Name
+			srczpath := srcDNAPath + "/" + zname
 			bs, err = readFile(srczpath, z.Code)
 			if err != nil {
 				return
@@ -712,33 +715,8 @@ func (h *Holochain) SaveDNA(overwrite bool) (err error) {
 // This function should only be called by developer tools at the end of the process
 // of finalizing DNA development or versioning
 func (h *Holochain) GenDNAHashes() (err error) {
-	var b []byte
-	for _, z := range h.Zomes {
-		code := z.Code
-		zpath := h.ZomePath(&z)
-		b, err = readFile(zpath, code)
-		if err != nil {
-			return
-		}
-		err = z.CodeHash.Sum(h.hashSpec, b)
-		if err != nil {
-			return
-		}
-		for i, e := range z.Entries {
-			sc := e.Schema
-			if sc != "" {
-				b, err = readFile(zpath, sc)
-				if err != nil {
-					return
-				}
-				err = e.SchemaHash.Sum(h.hashSpec, b)
-				if err != nil {
-					return
-				}
-				z.Entries[i] = e
-			}
-		}
-
+	for _, zome := range h.Zomes {
+		zome.GenZomeDNA(h)
 	}
 	err = h.SaveDNA(true)
 	return

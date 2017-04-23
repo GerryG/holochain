@@ -79,8 +79,8 @@ func prepareJSEntryArgs(entryType string, entry Entry, header *Header) (args str
 }
 
 func prepareJSValidateArgs(action Action, entryType string) (args string, err error) {
-	switch t := action.(type) {
 	def := h.GetEntryDef(entryType)
+	switch t := action.(type) {
 	case *ActionPut:
 		args, err = prepareJSEntryArgs(def, t.entry, t.header)
 	case *ActionCommit:

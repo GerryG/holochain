@@ -14,7 +14,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	Initialize()
+	Initialize(nil)
 	os.Exit(m.Run())
 }
 
@@ -38,19 +38,19 @@ func TestNewHolochain(t *testing.T) {
 		z := Zome{Name: "zySampleZome",
 			Description: "zome desc",
 			Code:        "zome_zySampleZome.zy",
-			Entries: []EntryDef{
-				{Name: "entryTypeFoo", DataFormat: DataFormatString},
-				{Name: "entryTypeBar", DataFormat: DataFormatRawZygo},
+			Entries: map[string]EntryDef{
+				"entryTypeFoo": {Name: "entryTypeFoo", DataFormat: DataFormatString},
+				"entryTypeBar": {Name: "entryTypeBar", DataFormat: DataFormatRawZygo},
 			},
 		}
 
 		h := NewHolochain(a, "some/path", "yaml")
-		h.Zomes = []Zome{z}
+		h.Zomes = map[string]Zome{z.Name: z}
 		nz, _ := h.GetZome("zySampleZome")
 		So(nz.Description, ShouldEqual, "zome desc")
 		So(nz.Code, ShouldEqual, "zome_zySampleZome.zy")
-		So(fmt.Sprintf("%v", nz.Entries[0]), ShouldEqual, "{entryTypeFoo string    <nil>}")
-		So(fmt.Sprintf("%v", nz.Entries[1]), ShouldEqual, "{entryTypeBar zygo    <nil>}")
+		So(fmt.Sprintf("%v", nz.Entries["entryTypeFoo"]), ShouldEqual, "{entryTypeFoo string    <nil>}")
+		So(fmt.Sprintf("%v", nz.Entries["entryTypeBar"]), ShouldEqual, "{entryTypeBar zygo    <nil>}")
 	})
 
 }
@@ -332,14 +332,13 @@ func TestGenChain(t *testing.T) {
 		var sh Hash
 		sh.Sum(h.hashSpec, b)
 
-		So(z2.Entries[2].SchemaHash.String(), ShouldEqual, sh.String())
+		So(z2.Entries["entryTypeFoo"].SchemaHash.String(), ShouldEqual, sh.String())
 	})
 
 	Convey("before GenChain call DNAHash call should fail", t, func() {
 		h := h.DNAHash()
 		So(h.String(), ShouldEqual, "")
 	})
-
 	var headerHash Hash
 	Convey("GenChain call works", t, func() {
 		headerHash, err = h.GenChain()
