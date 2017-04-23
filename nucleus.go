@@ -31,16 +31,10 @@ const (
 
 var ValidationFailedErr = errors.New("Validation Failed")
 
-// FunctionDef holds the name and calling type of an DNA exposed function
-type FunctionDef struct {
-	Name        string
-	CallingType string
-}
-
 // Nucleus type abstracts the functions of code execution environments
 type Nucleus interface {
 	Type() string
-	ValidateAction(action Action, def *EntryDef, sources []string) (err error)
+	ValidateAction(action Action, entryType string, sources []string) (err error)
 	ChainGenesis() error
 	Call(fn *FunctionDef, params interface{}) (interface{}, error)
 }

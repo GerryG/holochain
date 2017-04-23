@@ -128,7 +128,7 @@ func TestZybuildValidate(t *testing.T) {
 	d := EntryDef{Name: "oddNumbers", DataFormat: DataFormatString}
 
 	Convey("it should build commit", t, func() {
-		code, err := buildZyValidateAction(a, &d, []string{"fake_src_hash"})
+		code, err := buildZyValidateAction(a, d.Name, []string{"fake_src_hash"})
 		So(err, ShouldBeNil)
 		So(code, ShouldEqual, `(validateCommit "oddNumbers" "3" (hash EntryLink:"" Type:"" Time:"0001-01-01T00:00:00Z") (unjson (raw "[\"fake_src_hash\"]")))`)
 	})
@@ -152,7 +152,7 @@ foo
 `, func() {
 			a := NewCommitAction("oddNumbers", &GobEntry{C: "foo"})
 			a.header = &hdr
-			err = v.ValidateAction(a, &d, []string{"fakehashvalue"})
+			err = v.ValidateAction(a, d.Name, []string{"fakehashvalue"})
 			So(err, ShouldBeNil)
 		})
 	})
@@ -163,12 +163,12 @@ foo
 
 		a := NewCommitAction("oddNumbers", &GobEntry{C: "cow"})
 		a.header = &hdr
-		err = v.ValidateAction(a, &d, nil)
+		err = v.ValidateAction(a, d.Name, nil)
 		So(err, ShouldEqual, ValidationFailedErr)
 
 		a = NewCommitAction("oddNumbers", &GobEntry{C: "fish"})
 		a.header = &hdr
-		err = v.ValidateAction(a, &d, nil)
+		err = v.ValidateAction(a, d.Name, nil)
 		So(err, ShouldBeNil)
 	})
 	Convey("should run an entry value against the defined validator for zygo data", t, func() {
@@ -177,12 +177,12 @@ foo
 
 		a := NewCommitAction("oddNumbers", &GobEntry{C: "\"cow\""})
 		a.header = &hdr
-		err = v.ValidateAction(a, &d, nil)
+		err = v.ValidateAction(a, d.Name, nil)
 		So(err, ShouldEqual, ValidationFailedErr)
 
 		a = NewCommitAction("oddNumbers", &GobEntry{C: "\"fish\""})
 		a.header = &hdr
-		err = v.ValidateAction(a, &d, nil)
+		err = v.ValidateAction(a, d.Name, nil)
 		So(err, ShouldBeNil)
 	})
 	Convey("should run an entry value against the defined validator for json data", t, func() {
@@ -191,12 +191,12 @@ foo
 
 		a := NewCommitAction("evenNumbers", &GobEntry{C: `{"data":"cow"}`})
 		a.header = &hdr
-		err = v.ValidateAction(a, &d, nil)
+		err = v.ValidateAction(a, d.Name, nil)
 		So(err, ShouldEqual, ValidationFailedErr)
 
 		a = NewCommitAction("evenNumbers", &GobEntry{C: `{"data":"fish"}`})
 		a.header = &hdr
-		err = v.ValidateAction(a, &d, nil)
+		err = v.ValidateAction(a, d.Name, nil)
 		So(err, ShouldBeNil)
 	})
 }

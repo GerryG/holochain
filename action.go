@@ -34,17 +34,17 @@ func prepareSources(sources []peer.ID) (srcs []string) {
 }
 
 // ValidateAction runs the different phases of validating an action
-func (h *Holochain) ValidateAction(a Action, entryType string, sources []peer.ID) (d *EntryDef, err error) {
+func (h *Holochain) ValidateAction(action Action, entryType string, sources []peer.ID) (def *EntryDef, err error) {
 	var z *Zome
-	z, d, err = h.GetEntryDef(entryType)
+	z, def, err = h.GetEntryDef(entryType)
 	if err != nil {
 		return
 	}
 
 	// run the action's system level validations
-	err = a.SysValidation(h, d, sources)
+	err = action.SysValidation(h, def, sources)
 	if err != nil {
-		Debugf("Sys ValidateAction(%T) err:%v\n", a, err)
+		Debugf("Sys ValidateAction(%T) err:%v\n", action, err)
 		return
 	}
 
@@ -55,9 +55,9 @@ func (h *Holochain) ValidateAction(a Action, entryType string, sources []peer.ID
 		return
 	}
 
-	err = n.ValidateAction(a, d, prepareSources(sources))
+	err = n.ValidateAction(action, entryType, prepareSources(sources))
 	if err != nil {
-		Debugf("Nucleus ValidateAction(%T) err:%v\n", a, err)
+		Debugf("Nucleus ValidateAction(%T) err:%v\n", action, err)
 	}
 	return
 }

@@ -58,7 +58,7 @@ func (z *ZygoNucleus) ChainGenesis() (err error) {
 
 }
 
-func prepareZyEntryArgs(def *EntryDef, entry Entry, header *Header) (args string, err error) {
+func prepareZyEntryArgs(entryType string, entry Entry, header *Header) (args string, err error) {
 	entryStr := entry.Content().(string)
 	switch def.DataFormat {
 	case DataFormatRawZygo:
@@ -90,7 +90,8 @@ func prepareZyEntryArgs(def *EntryDef, entry Entry, header *Header) (args string
 	return
 }
 
-func prepareZyValidateArgs(action Action, def *EntryDef) (args string, err error) {
+func prepareZyValidateArgs(action Action, entryType string) (args string, err error) {
+	def := h.GetEntryDef(entryType)
 	switch t := action.(type) {
 	case *ActionCommit:
 		args, err = prepareZyEntryArgs(def, t.entry, t.header)
@@ -111,23 +112,23 @@ func prepareZyValidateArgs(action Action, def *EntryDef) (args string, err error
 	return
 }
 
-func buildZyValidateAction(action Action, def *EntryDef, sources []string) (code string, err error) {
+func buildZyValidateAction(action Action, entryType string, sources []string) (code string, err error) {
 	fnName := "validate" + strings.Title(action.Name())
 	var args string
-	args, err = prepareZyValidateArgs(action, def)
+	args, err = prepareZyValidateArgs(action, entryType)
 	if err != nil {
 		return
 	}
 	srcs := mkZySources(sources)
-	code = fmt.Sprintf(`(%s "%s" %s %s)`, fnName, def.Name, args, srcs)
+	code = fmt.Sprintf(`(%s "%s" %s %s)`, fnName, entryType, args, srcs)
 
 	return
 }
 
 // ValidateAction builds the correct validation function based on the action an calls it
-func (z *ZygoNucleus) ValidateAction(action Action, def *EntryDef, sources []string) (err error) {
+func (z *ZygoNucleus) ValidateAction(action Action, entryType string, sources []string) (err error) {
 	var code string
-	code, err = buildZyValidateAction(action, def, sources)
+	code, err = buildZyValidateAction(action, entryType, sources)
 	if err != nil {
 		return
 	}
@@ -147,7 +148,8 @@ func mkZySources(sources []string) (srcs string) {
 	return
 }
 
-func (z *ZygoNucleus) prepareValidateArgs(def *EntryDef, entry Entry, sources []string) (e string, srcs string, err error) {
+func (z *ZygoNucleus) prepareValidateArgs(entryType string, entry Entry, sources []string) (e string, srcs string, err error) {
+	def := h.GetEntryDef(entryType)
 	c := entry.Content().(string)
 	// @todo handle JSON if schema type is different
 	switch def.DataFormat {
@@ -192,8 +194,8 @@ func (z *ZygoNucleus) runValidate(fnName string, code string) (err error) {
 	return
 }
 
-func (z *ZygoNucleus) validateEntry(fnName string, def *EntryDef, entry Entry, header *Header, sources []string) (err error) {
-	e, srcs, err := z.prepareValidateArgs(def, entry, sources)
+func (z *ZygoNucleus) validateEntry(fnName string, entryType string, entry Entry, header *Header, sources []string) (err error) {
+	e, srcs, err := z.prepareValidateArgs(entryType, entry, sources)
 	if err != nil {
 		return
 	}
@@ -210,7 +212,7 @@ func (z *ZygoNucleus) validateEntry(fnName string, def *EntryDef, entry Entry, h
 		hdr = `""`
 	}
 
-	code := fmt.Sprintf(`(%s "%s" %s %s %s)`, fnName, def.Name, e, hdr, srcs)
+	code := fmt.Sprintf(`(%s "%s" %s %s %s)`, fnName, entryType, e, hdr, srcs)
 	Debugf("%s: %s", fnName, code)
 
 	err = z.runValidate(fnName, code)

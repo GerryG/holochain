@@ -53,16 +53,6 @@ type Link struct {
 	Tag  string // tag
 }
 
-// EntryDef struct holds an entry definition
-type EntryDef struct {
-	Name       string
-	DataFormat string
-	Schema     string // file name of schema or language schema directive
-	SchemaHash Hash
-	Sharing    string
-	validator  SchemaValidator
-}
-
 // Entry describes serialization and deserialziation of entry data
 type Entry interface {
 	Marshal() ([]byte, error)
