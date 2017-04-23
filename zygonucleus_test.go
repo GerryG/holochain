@@ -136,7 +136,8 @@ func TestZybuildValidate(t *testing.T) {
 
 func TestZyValidateCommit(t *testing.T) {
 	a, _ := NewAgent(IPFS, "Joe")
-	h := NewHolochain(a, "some/path", "yaml", Zome{})
+	h := NewHolochain(a, "some/path", "yaml")
+	h.Zomes = []Zome{}
 	h.config.Loggers.App.New(nil)
 	hdr := mkTestHeader("evenNumbers")
 
