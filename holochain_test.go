@@ -45,7 +45,8 @@ func TestNewHolochain(t *testing.T) {
 			},
 		}
 
-		h := NewHolochain(a, "some/path", "yaml", z)
+		h := NewHolochain(a, "some/path", "yaml")
+		h.Zomes = []Zome{z}
 		nz, _ := h.GetZome("zySampleZome")
 		So(nz.Description, ShouldEqual, "zome desc")
 		So(nz.Code, ShouldEqual, "zome_zySampleZome.zy")
