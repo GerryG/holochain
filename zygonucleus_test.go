@@ -122,7 +122,7 @@ func TestZygoGenesis(t *testing.T) {
 func TestZygoValidateCommit(t *testing.T) {
 	a, _ := NewAgent(IPFS, "Joe")
 	h := NewHolochain(a, "some/path", "yaml")
-	h.Zomes = map[string]Zome{}
+	h.Zomes = []Zome{}
 	h.config.Loggers.App.New(nil)
 	hdr := mkTestHeader("evenNumbers")
 
@@ -168,7 +168,7 @@ foo
 func TestZygoValidateLink(t *testing.T) {
 	a, _ := NewAgent(IPFS, "Joe")
 	h := NewHolochain(a, "some/path", "yaml")
-	h.Zomes = map[string]Zome{}
+	h.Zomes = []Zome{}
 	h.config.Loggers.App.New(nil)
 
 	Convey("it should be passing in the correct values", t, func() {
