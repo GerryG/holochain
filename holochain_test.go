@@ -14,7 +14,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	Initialize(nil)
+	Initialize(InitializeProtocols)
 	os.Exit(m.Run())
 }
 
@@ -45,7 +45,7 @@ func TestNewHolochain(t *testing.T) {
 		}
 
 		h := NewHolochain(a, "some/path", "yaml")
-		h.Zomes = []Zome{z}
+		h.Zomes = map[string]Zome{z.Name: z}
 		nz, _ := h.GetZome("zySampleZome")
 		So(nz.Description, ShouldEqual, "zome desc")
 		So(nz.Code, ShouldEqual, "zome_zySampleZome.zy")

@@ -19,29 +19,13 @@ type Zome struct {
 	Description string
 	Code        string // file name of DNA code
 	CodeHash    Hash
-	Entries     []EntryDef
+	Entries     map[string]EntryDef
 	NucleusType string
-	Functions   []FunctionDef
+	Functions   map[string]FunctionDef
 
-	// cache for code
+	// cache for code and nucleus
 	code string
 	nuc  *Nucleus
-}
-
-// EntryDef struct holds an entry definition
-type EntryDef struct {
-	Name       string
-	DataFormat string
-	Schema     string // file name of schema or language schema directive
-	SchemaHash Hash
-	Sharing    string
-	validator  SchemaValidator
-}
-
-// FunctionDef holds the name and calling type of an DNA exposed function
-type FunctionDef struct {
-	Name        string
-	CallingType string
 }
 
 // EntryDef struct holds an entry definition
@@ -66,7 +50,7 @@ func (h *Holochain) ZomePath(z *Zome) string {
 	return h.DNAPath() + "/" + z.Name
 }
 
-func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
+func (h *Holochain) PrepareZomes(zomes map[string]Zome) (err error) {
 	for _, z := range zomes {
 		zpath := h.ZomePath(&z)
 		if !fileExists(zpath + "/" + z.Code) {
@@ -74,7 +58,7 @@ func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
 			err = errors.New("DNA specified code file missing: " + z.Code)
 			return
 		}
-		for i, e := range z.Entries {
+		for name, e := range z.Entries {
 			sc := e.Schema
 			if sc != "" {
 				if !fileExists(zpath + "/" + sc) {
@@ -85,7 +69,7 @@ func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
 					if err = e.BuildJSONSchemaValidator(zpath); err != nil {
 						return
 					}
-					z.Entries[i] = e
+					z.Entries[name] = e
 				}
 			}
 		}
