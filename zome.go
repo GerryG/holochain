@@ -19,9 +19,9 @@ type Zome struct {
 	Description string
 	Code        string // file name of DNA code
 	CodeHash    Hash
-	Entries     []EntryDef
+	Entries     map[string]EntryDef
 	NucleusType string
-	Functions   []FunctionDef
+	Functions   map[string]FunctionDef
 
 	// cached stuff, not in dna
 	code        string
@@ -47,6 +47,10 @@ type EntryDef struct {
 type FunctionDef struct {
 	Name        string
 	CallingType string
+
+	// cache for code and nucleus
+	code string
+	nuc  *Nucleus
 }
 
 // EntryDef struct holds an entry definition
@@ -71,7 +75,7 @@ func (h *Holochain) ZomePath(z *Zome) string {
 	return h.DNAPath() + "/" + z.Name
 }
 
-func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
+func (h *Holochain) PrepareZomes(zomes map[string]Zome) (err error) {
 	for _, z := range zomes {
 		zpath := h.ZomePath(&z)
 		if !fileExists(zpath + "/" + z.Code) {
@@ -79,7 +83,7 @@ func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
 			err = errors.New("DNA specified code file missing: " + z.Code)
 			return
 		}
-		for i, e := range z.Entries {
+		for name, e := range z.Entries {
 			sc := e.Schema
 			if sc != "" {
 				if !fileExists(zpath + "/" + sc) {
@@ -90,7 +94,7 @@ func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
 					if err = e.BuildJSONSchemaValidator(zpath); err != nil {
 						return
 					}
-					z.Entries[i] = e
+					z.Entries[name] = e
 				}
 			}
 		}
