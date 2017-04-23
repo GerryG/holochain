@@ -19,12 +19,13 @@ type Zome struct {
 	Description string
 	Code        string // file name of DNA code
 	CodeHash    Hash
-	Entries     []EntryDef
+	Entries     map[string]EntryDef
 	NucleusType string
-	Functions   []FunctionDef
+	Functions   map[string]FunctionDef
 
-	// cache for code
+	// cache for code and nucleus
 	code string
+	nuc  *Nucleus
 }
 
 // EntryDef struct holds an entry definition
@@ -49,7 +50,7 @@ func (h *Holochain) ZomePath(z *Zome) string {
 	return h.DNAPath() + "/" + z.Name
 }
 
-func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
+func (h *Holochain) PrepareZomes(zomes map[string]Zome) (err error) {
 	for _, z := range zomes {
 		zpath := h.ZomePath(&z)
 		if !fileExists(zpath + "/" + z.Code) {
@@ -57,7 +58,7 @@ func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
 			err = errors.New("DNA specified code file missing: " + z.Code)
 			return
 		}
-		for i, e := range z.Entries {
+		for name, e := range z.Entries {
 			sc := e.Schema
 			if sc != "" {
 				if !fileExists(zpath + "/" + sc) {
@@ -68,7 +69,7 @@ func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
 					if err = e.BuildJSONSchemaValidator(zpath); err != nil {
 						return
 					}
-					z.Entries[i] = e
+					z.Entries[name] = e
 				}
 			}
 		}
@@ -86,6 +87,34 @@ func (zome *Zome) GetNucleus(chain *Holochain) (err error) {
 		err = n.ChainGenesis()
 		if err != nil {
 			err = fmt.Errorf("In '%s' zome: %s", zome.Name, err.Error())
+		}
+	}
+	return
+}
+
+func (zome *Zome) GenZomeDNA(chain *Holochain) (err error) {
+	var bytes []byte
+	zpath := chain.ZomePath(zome)
+	bytes, err = readFile(zpath, zome.Code)
+	if err != nil {
+		return
+	}
+	err = zome.CodeHash.Sum(chain.hashSpec, bytes)
+	if err != nil {
+		return
+	}
+	for name, entry := range zome.Entries {
+		schema := entry.Schema
+		if schema != "" {
+			bytes, err = readFile(zpath, schema)
+			if err != nil {
+				return
+			}
+			err = entry.SchemaHash.Sum(chain.hashSpec, bytes)
+			if err != nil {
+				return
+			}
+			zome.Entries[name] = entry
 		}
 	}
 	return
