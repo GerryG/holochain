@@ -163,45 +163,45 @@ function genesis() {return true}
 
 // maybe put in sample.go ?
 // for generic sample
-var SampleZomes = map[string]Zome{
-	"zySampleZome": {
+var SampleZomes = []Zome{
+	{
 		Name:        "zySampleZome",
 		Code:        "zySampleZome.zy",
 		Description: "this is a zygomas test zome",
 		NucleusType: ZygoNucleusType,
-		Entries: map[string]EntryDef{
-			"evenNumbers": {Name: "evenNumbers", DataFormat: DataFormatRawZygo, Sharing: Public},
-			"primes":      {Name: "primes", DataFormat: DataFormatJSON, Sharing: Public},
-			"profile":     {Name: "profile", DataFormat: DataFormatJSON, Schema: "profile.json", Sharing: Public},
+		Entries: []EntryDef{
+			{Name: "evenNumbers", DataFormat: DataFormatRawZygo, Sharing: Public},
+			{Name: "primes", DataFormat: DataFormatJSON, Sharing: Public},
+			{Name: "profile", DataFormat: DataFormatJSON, Schema: "profile.json", Sharing: Public},
 		},
-		Functions: map[string]FunctionDef{
-			"getDNA":      {Name: "getDNA", CallingType: STRING_CALLING},
-			"addEven":     {Name: "addEven", CallingType: STRING_CALLING},
-			"addPrime":    {Name: "addPrime", CallingType: JSON_CALLING},
-			"testStrFn1":  {Name: "testStrFn1", CallingType: STRING_CALLING},
-			"testStrFn2":  {Name: "testStrFn2", CallingType: STRING_CALLING},
-			"testJsonFn1": {Name: "testJsonFn1", CallingType: JSON_CALLING},
-			"testJsonFn2": {Name: "testJsonFn2", CallingType: JSON_CALLING},
+		Functions: []FunctionDef{
+			{Name: "getDNA", CallingType: STRING_CALLING},
+			{Name: "addEven", CallingType: STRING_CALLING},
+			{Name: "addPrime", CallingType: JSON_CALLING},
+			{Name: "testStrFn1", CallingType: STRING_CALLING},
+			{Name: "testStrFn2", CallingType: STRING_CALLING},
+			{Name: "testJsonFn1", CallingType: JSON_CALLING},
+			{Name: "testJsonFn2", CallingType: JSON_CALLING},
 		},
 	},
-	"jsSampleZome": {
+	{
 		Name:        "jsSampleZome",
 		Code:        "jsSampleZome.js",
 		Description: "this is a javascript test zome",
 		NucleusType: JSNucleusType,
-		Entries: map[string]EntryDef{
-			"oddNumbers": {Name: "oddNumbers", DataFormat: DataFormatRawJS, Sharing: Public},
-			"profile":    {Name: "profile", DataFormat: DataFormatJSON, Schema: "profile.json", Sharing: Public},
-			"rating":     {Name: "rating", DataFormat: DataFormatLinks},
+		Entries: []EntryDef{
+			{Name: "oddNumbers", DataFormat: DataFormatRawJS, Sharing: Public},
+			{Name: "profile", DataFormat: DataFormatJSON, Schema: "profile.json", Sharing: Public},
+			{Name: "rating", DataFormat: DataFormatLinks},
 		},
-		Functions: map[string]FunctionDef{
-			"oddNumbers":  {Name: "getProperty", CallingType: STRING_CALLING},
-			"oddOdd":      {Name: "addOdd", CallingType: STRING_CALLING},
-			"oddProfile":  {Name: "addProfile", CallingType: JSON_CALLING},
-			"testStrFn1":  {Name: "testStrFn1", CallingType: STRING_CALLING},
-			"testStrFn2":  {Name: "testStrFn2", CallingType: STRING_CALLING},
-			"testJsonFn1": {Name: "testJsonFn1", CallingType: JSON_CALLING},
-			"testJsonFn2": {Name: "testJsonFn2", CallingType: JSON_CALLING},
+		Functions: []FunctionDef{
+			{Name: "getProperty", CallingType: STRING_CALLING},
+			{Name: "addOdd", CallingType: STRING_CALLING},
+			{Name: "addProfile", CallingType: JSON_CALLING},
+			{Name: "testStrFn1", CallingType: STRING_CALLING},
+			{Name: "testStrFn2", CallingType: STRING_CALLING},
+			{Name: "testJsonFn1", CallingType: JSON_CALLING},
+			{Name: "testJsonFn2", CallingType: JSON_CALLING},
 		}},
 }
 
