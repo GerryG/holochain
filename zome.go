@@ -27,6 +27,22 @@ type Zome struct {
 	code string
 }
 
+// EntryDef struct holds an entry definition
+type EntryDef struct {
+	Name       string
+	DataFormat string
+	Schema     string // file name of schema or language schema directive
+	SchemaHash Hash
+	Sharing    string
+	validator  SchemaValidator
+}
+
+// FunctionDef holds the name and calling type of an DNA exposed function
+type FunctionDef struct {
+	Name        string
+	CallingType string
+}
+
 // ZomePath returns the path to the zome dna data
 // @todo sanitize the name value
 func (h *Holochain) ZomePath(z *Zome) string {
@@ -60,5 +76,17 @@ func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
 
 	h.dht = NewDHT(h)
 
+	return
+}
+
+func (zome *Zome) GetNucleus(chain *Holochain) (err error) {
+	var n Nucleus
+	n, err = chain.makeNucleus(zome)
+	if err == nil {
+		err = n.ChainGenesis()
+		if err != nil {
+			err = fmt.Errorf("In '%s' zome: %s", zome.Name, err.Error())
+		}
+	}
 	return
 }

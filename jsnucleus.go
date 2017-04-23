@@ -51,7 +51,8 @@ func (z *JSNucleus) ChainGenesis() (err error) {
 	return
 }
 
-func prepareJSEntryArgs(def *EntryDef, entry Entry, header *Header) (args string, err error) {
+func prepareJSEntryArgs(entryType string, entry Entry, header *Header) (args string, err error) {
+	def := h.GetEntryDef(entryType)
 	entryStr := entry.Content().(string)
 	switch def.DataFormat {
 	case DataFormatRawJS:
@@ -77,8 +78,9 @@ func prepareJSEntryArgs(def *EntryDef, entry Entry, header *Header) (args string
 	return
 }
 
-func prepareJSValidateArgs(action Action, def *EntryDef) (args string, err error) {
+func prepareJSValidateArgs(action Action, entryType string) (args string, err error) {
 	switch t := action.(type) {
+	def := h.GetEntryDef(entryType)
 	case *ActionPut:
 		args, err = prepareJSEntryArgs(def, t.entry, t.header)
 	case *ActionCommit:
@@ -99,23 +101,23 @@ func prepareJSValidateArgs(action Action, def *EntryDef) (args string, err error
 	return
 }
 
-func buildJSValidateAction(action Action, def *EntryDef, sources []string) (code string, err error) {
+func buildJSValidateAction(action Action, entryType string, sources []string) (code string, err error) {
 	fnName := "validate" + strings.Title(action.Name())
 	var args string
-	args, err = prepareJSValidateArgs(action, def)
+	args, err = prepareJSValidateArgs(action, entryType)
 	if err != nil {
 		return
 	}
 	srcs := mkJSSources(sources)
-	code = fmt.Sprintf(`%s("%s",%s,%s)`, fnName, def.Name, args, srcs)
+	code = fmt.Sprintf(`%s("%s",%s,%s)`, fnName, entryType, args, srcs)
 
 	return
 }
 
 // ValidateAction builds the correct validation function based on the action an calls it
-func (z *JSNucleus) ValidateAction(action Action, def *EntryDef, sources []string) (err error) {
+func (z *JSNucleus) ValidateAction(action Action, entryType string, sources []string) (err error) {
 	var code string
-	code, err = buildJSValidateAction(action, def, sources)
+	code, err = buildJSValidateAction(action, entryType, sources)
 	if err != nil {
 		return
 	}
@@ -172,9 +174,9 @@ func (z *JSNucleus) runValidate(fnName string, code string) (err error) {
 	return
 }
 
-func (z *JSNucleus) validateEntry(fnName string, def *EntryDef, entry Entry, header *Header, sources []string) (err error) {
+func (z *JSNucleus) validateEntry(fnName string, entryType string, entry Entry, header *Header, sources []string) (err error) {
 
-	e, srcs, err := z.prepareJSValidateEntryArgs(def, entry, sources)
+	e, srcs, err := z.prepareJSValidateEntryArgs(entryType, entry, sources)
 	if err != nil {
 		return
 	}
@@ -186,7 +188,7 @@ func (z *JSNucleus) validateEntry(fnName string, def *EntryDef, entry Entry, hea
 		header.Time.UTC().Format(time.RFC3339),
 	)
 
-	code := fmt.Sprintf(`%s("%s",%s,%s,%s)`, fnName, def.Name, e, hdr, srcs)
+	code := fmt.Sprintf(`%s("%s",%s,%s,%s)`, fnName, entryType, e, hdr, srcs)
 	Debugf("%s: %s", fnName, code)
 	err = z.runValidate(fnName, code)
 	if err != nil && err == ValidationFailedErr {
