@@ -20,7 +20,7 @@ type ValidateQuery struct {
 
 // ValidateResponse holds the response to a VALIDATE_PUT_REQUEST
 type ValidateResponse struct {
-	Entry  GobEntry
+	Entry  EntryObj
 	Header Header
 	Type   string
 }
@@ -33,7 +33,7 @@ type ValidateLinkResponse struct {
 
 // ValidateDelResponse holds the response to a VALIDATE_DEL_REQUEST
 type ValidateDelResponse struct {
-	Type   string
+	Type string
 }
 
 // ValidateReceiver handles messages on the Validate protocol
@@ -49,7 +49,7 @@ func ValidateReceiver(h *Holochain, m *Message) (response interface{}, err error
 			if err != nil {
 				return
 			}
-			r.Entry = *(entry.(*GobEntry))
+			r.Entry = *(entry.(*EntryObj))
 			var hd *Header
 			hd, err = h.chain.GetEntryHeader(t.H)
 			if err != nil {
@@ -66,7 +66,7 @@ func ValidateReceiver(h *Holochain, m *Message) (response interface{}, err error
 		switch t := m.Body.(type) {
 		case ValidateQuery:
 			var r ValidateDelResponse
-			_,r.Type, err = h.chain.GetEntry(t.H)
+			_, r.Type, err = h.chain.GetEntry(t.H)
 			if err != nil {
 				return
 			}

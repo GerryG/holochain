@@ -44,7 +44,7 @@ var ErrDHTErrNoGossipersAvailable error = errors.New("no gossipers available")
 var ErrDHTExpectedGossipReqInBody error = errors.New("expected gossip request")
 
 // incIdx adds a new index record to dht for gossiping later
-func incIdx(tx *buntdb.Tx, m *Message) (index string, err error) {
+func incIdx(tx *buntdb.Tx, m *Message, coding string) (index string, err error) {
 	var idx int
 	idx, err = getIntVal("_idx", tx)
 	if err != nil {
@@ -61,7 +61,7 @@ func incIdx(tx *buntdb.Tx, m *Message) (index string, err error) {
 
 	if m != nil {
 		var b []byte
-		b, err = ByteEncoder(m)
+		b, err = ByteEncoder(m, coding)
 		if err != nil {
 			return
 		}
@@ -72,7 +72,7 @@ func incIdx(tx *buntdb.Tx, m *Message) (index string, err error) {
 		return
 	}
 
-	f, err := m.Fingerprint()
+	f, err := m.Fingerprint(coding)
 	if err != nil {
 		return
 	}
@@ -141,7 +141,7 @@ func (dht *DHT) GetPuts(since int) (puts []Put, err error) {
 			if idx >= since {
 				var p Put
 				if value != "" {
-					err := ByteDecoder([]byte(value), &p.M)
+					err := ByteDecoder([]byte(value), &p.M, dht.h.WireType)
 					if err != nil {
 						return false
 					}
@@ -277,7 +277,7 @@ func (dht *DHT) gossipWith(id peer.ID, after int) (err error) {
 		err = dht.UpdateGossiperIdx(id, count)
 		dht.glog.Logf("running %d puts", count)
 		for _, p := range puts {
-			f, e := p.M.Fingerprint()
+			f, e := p.M.Fingerprint(dht.h.WireType)
 			if e == nil {
 				exists, e := dht.HaveFingerprint(f)
 				if !exists && e == nil {

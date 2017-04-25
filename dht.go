@@ -146,7 +146,7 @@ func (dht *DHT) SetupDHT() (err error) {
 	}
 
 	var b []byte
-	b, err = e.Marshal()
+	b, err = e.Marshal(dht.h.WireType)
 	if err != nil {
 		return
 	}
@@ -172,7 +172,7 @@ func (dht *DHT) put(m *Message, entryType string, key Hash, src peer.ID, value [
 	k := key.String()
 	dht.dlog.Logf("put %s=>%s", k, string(value))
 	err = dht.db.Update(func(tx *buntdb.Tx) error {
-		_, err := incIdx(tx, m)
+		_, err := incIdx(tx, m, dht.h.WireType)
 		if err != nil {
 			return err
 		}
@@ -212,7 +212,7 @@ func (dht *DHT) del(m *Message, key Hash) (err error) {
 			return err
 		}
 
-		_, err = incIdx(tx, m)
+		_, err = incIdx(tx, m, dht.h.WireType)
 		if err != nil {
 			return err
 		}
@@ -293,7 +293,7 @@ func (dht *DHT) putLink(m *Message, base string, link string, tag string) (err e
 		}
 
 		var index string
-		index, err = incIdx(tx, m)
+		index, err = incIdx(tx, m, dht.h.WireType)
 		if err != nil {
 			return err
 		}
@@ -461,7 +461,7 @@ func (dht *DHT) handleChangeReq(m *Message) (err error) {
 			}
 			entry := resp.Entry
 			var b []byte
-			b, err = entry.Marshal()
+			b, err = entry.Marshal(dht.h.WireType)
 			if err == nil {
 				err = dht.put(m, resp.Type, t.H, from, b, status)
 			}
@@ -575,8 +575,8 @@ func DHTReceiver(h *Holochain, m *Message) (response interface{}, err error) {
 			var b []byte
 			b, _, _, err = h.dht.get(t.H)
 			if err == nil {
-				var e GobEntry
-				err = e.Unmarshal(b)
+				var e EntryObj
+				err = e.Unmarshal(b, dht.h.WireType)
 				if err == nil {
 					response = &e
 				}

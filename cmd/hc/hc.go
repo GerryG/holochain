@@ -310,11 +310,11 @@ func setupApp() (app *cli.App) {
 					e := entries[i]
 					switch hdr.Type {
 					case holo.KeyEntryType:
-						fmt.Printf("       %v\n", e.(*holo.GobEntry).C)
+						fmt.Printf("       %v\n", e.(*holo.EntryObj).C)
 					case holo.DNAEntryType:
-						fmt.Printf("       %s\n", e.(*holo.GobEntry).C)
+						fmt.Printf("       %s\n", e.(*holo.EntryObj).C)
 					case holo.AgentEntryType:
-						fmt.Printf("       %v\n", e.(*holo.GobEntry).C.(holo.AgentEntry))
+						fmt.Printf("       %v\n", e.(*holo.EntryObj).C.(holo.AgentEntry))
 					default:
 						fmt.Printf("       %v\n", e)
 					}
@@ -378,8 +378,8 @@ func setupApp() (app *cli.App) {
 				if err != nil {
 					return err
 				}
-				e := holo.GobEntry{C: buf.Bytes()}
-				hash, err := e.Sum(h.HashSpec())
+				e := holo.EntryObj{C: buf.Bytes()}
+				hash, err := e.Sum(h)
 				fmt.Printf("holochain id:%v\n", hash)
 				return err
 			},

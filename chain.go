@@ -37,7 +37,7 @@ type Chain struct {
 }
 
 // NewChain creates and empty chain
-func NewChain() (chain *Chain) {
+func (holo *Holochain) NewChain() (err error) {
 	c := Chain{
 		Headers:  make([]*Header, 0),
 		Entries:  make([]Entry, 0),
@@ -46,19 +46,23 @@ func NewChain() (chain *Chain) {
 		Hmap:     make(map[string]int),
 		Emap:     make(map[string]int),
 	}
-	chain = &c
+	holo.chain = &c
 	return
 }
 
 // NewChainFromFile creates a chain from a file, loading any data there,
 // and setting it to be persisted to. If no file exists it will be created.
-func NewChainFromFile(h HashSpec, path string) (c *Chain, err error) {
+func (holo *Holochain) NewChainFromFile() (err error) {
+	path := holo.DBPath() + "/" + StoreFileName
+	//execCmd("/bin/ls", "-ltrR", holo.DBPath())
 	defer func() {
 		if err != nil {
 			Debugf("error loading chain :%s", err.Error())
 		}
 	}()
-	c = NewChain()
+	holo.NewChain()
+
+	chain := holo.chain
 
 	var f *os.File
 	if fileExists(path) {
@@ -70,36 +74,35 @@ func NewChainFromFile(h HashSpec, path string) (c *Chain, err error) {
 		for {
 			var header *Header
 			var e Entry
-			header, e, err = readPair(f)
+			header, e, err = holo.readPair(f)
 			if err != nil && err.Error() == "EOF" {
 				err = nil
 				break
 			}
 			if err != nil {
-				Debugf("error reading pair:%s", err.Error())
 				return
 			}
-			c.addPair(header, e, i)
+			chain.addPair(header, e, i)
 			i++
 		}
 		f.Close()
 		i--
 		// if we read anything then we have to calculate the final hash and add it
 		if i >= 0 {
-			hd := c.Headers[i]
+			hd := chain.Headers[i]
 			var hash Hash
 
 			// hash the header
-			hash, _, err = hd.Sum(h)
+			hash, _, err = hd.Sum(holo)
 			if err != nil {
 				return
 			}
 
-			c.Hashes = append(c.Hashes, hash)
-			c.Hmap[hash.String()] = i
+			chain.Hashes = append(chain.Hashes, hash)
+			chain.Hmap[hash.String()] = i
 
 			// finally validate that it all hashes out correctly
-			/*			err = c.Validate(h)
+			/*			err = h.ValidateChain()
 						if err != nil {
 							return
 						}
@@ -116,7 +119,7 @@ func NewChainFromFile(h HashSpec, path string) (c *Chain, err error) {
 			return
 		}
 	}
-	c.s = f
+	chain.s = f
 	return
 }
 
@@ -146,37 +149,42 @@ func (c *Chain) TopType(entryType string) (hash *Hash, header *Header) {
 }
 
 // AddEntry creates a new header and adds it to a chain
-func (c *Chain) AddEntry(h HashSpec, now time.Time, entryType string, e Entry, key ic.PrivKey) (hash Hash, err error) {
-	var l int
+func (holo *Holochain) AddEntry(now time.Time, entryType string, e Entry, key ic.PrivKey) (hash Hash, err error) {
+	var l int // I should know what PrepareHeader returns from this name, and I can't possibly
 	var header *Header
-	l, hash, header, err = c.PrepareHeader(h, now, entryType, e, key)
+	l, hash, header, err = holo.PrepareHeader(now, entryType, e, key)
 	if err == nil {
-		err = c.addEntry(l, hash, header, e)
+		err = holo.addEntry(l, hash, header, e)
 	}
 	return
 }
 
-func (c *Chain) PrepareHeader(h HashSpec, now time.Time, entryType string, e Entry, key ic.PrivKey) (entryIdx int, hash Hash, header *Header, err error) {
+func (holo *Holochain) PrepareHeader(now time.Time, entryType string, e Entry, key ic.PrivKey) (entryIdx int, hash Hash, header *Header, err error) {
 
 	// get the previous hashes
 	var ph, pth Hash
 
 	//@TODO make this transactional
-	l := len(c.Hashes)
+	if holo.chain == nil {
+		Debug("no chain")
+		return
+	}
+	//Debugf("PH %v\n", holo.chain.Hashes)
+	l := len(holo.chain.Hashes)
 	if l == 0 {
 		ph = NullHash()
 	} else {
-		ph = c.Hashes[l-1]
+		ph = holo.chain.Hashes[l-1]
 	}
 
-	i, ok := c.TypeTops[entryType]
+	i, ok := holo.chain.TypeTops[entryType]
 	if !ok {
 		pth = NullHash()
 	} else {
-		pth = c.Hashes[i]
+		pth = holo.chain.Hashes[i]
 	}
 
-	hash, header, err = newHeader(h, now, entryType, e, key, ph, pth)
+	hash, header, err = holo.NewHeader(now, entryType, e, key, ph, pth)
 	if err != nil {
 		return
 	}
@@ -184,25 +192,25 @@ func (c *Chain) PrepareHeader(h HashSpec, now time.Time, entryType string, e Ent
 	return
 }
 
-func (c *Chain) addEntry(entryIdx int, hash Hash, header *Header, e Entry) (err error) {
+func (holo *Holochain) addEntry(entryIdx int, hash Hash, header *Header, e Entry) (err error) {
 
-	l := len(c.Hashes)
+	l := len(holo.chain.Hashes)
 	if l != entryIdx {
 		err = errors.New("entry indexes don't match can't create new entry")
 		return
 	}
-	var g GobEntry
-	g = *e.(*GobEntry)
+	var g EntryObj
+	g = *e.(*EntryObj)
 
-	c.Hashes = append(c.Hashes, hash)
-	c.Headers = append(c.Headers, header)
-	c.Entries = append(c.Entries, &g)
-	c.TypeTops[header.Type] = entryIdx
-	c.Emap[header.EntryLink.String()] = entryIdx
-	c.Hmap[hash.String()] = entryIdx
+	holo.chain.Hashes = append(holo.chain.Hashes, hash)
+	holo.chain.Headers = append(holo.chain.Headers, header)
+	holo.chain.Entries = append(holo.chain.Entries, &g)
+	holo.chain.TypeTops[header.Type] = entryIdx
+	holo.chain.Emap[header.EntryLink.String()] = entryIdx
+	holo.chain.Hmap[hash.String()] = entryIdx
 
-	if c.s != nil {
-		err = writePair(c.s, header, &g)
+	if holo.chain.s != nil {
+		err = holo.writePair(holo.chain.s, header, &g)
 	}
 
 	return
@@ -223,7 +231,7 @@ func (c *Chain) Get(h Hash) (header *Header, err error) {
 func (c *Chain) GetEntry(h Hash) (entry Entry, entryType string, err error) {
 	i, ok := c.Emap[h.String()]
 	if ok {
-		entry = c.Entries[i]
+		entry = c.Entries[i] // This is a structure copy, yes?
 		entryType = c.Headers[i].Type
 	} else {
 		err = ErrHashNotFound
@@ -242,45 +250,50 @@ func (c *Chain) GetEntryHeader(h Hash) (header *Header, err error) {
 	return
 }
 
-func writePair(writer io.Writer, header *Header, entry Entry) (err error) {
-	err = MarshalHeader(writer, header)
+func (holo *Holochain) writePair(writer io.Writer, header *Header, entry Entry) (err error) {
+	err = MarshalHeader(writer, header, holo.WireType)
 	if err != nil {
 		return
 	}
-	err = MarshalEntry(writer, entry)
+	err = holo.MarshalEntry(writer, entry)
 	return
 }
 
-func readPair(reader io.Reader) (header *Header, entry Entry, err error) {
+func (holo *Holochain) readPair(reader io.Reader) (header *Header, entry Entry, err error) {
 	var hd Header
-	err = UnmarshalHeader(reader, &hd, 34)
+	err = holo.UnmarshalHeader(reader, &hd, 34)
 	if err != nil {
 		return
 	}
 	header = &hd
-	entry, err = UnmarshalEntry(reader)
+	entry, err = holo.UnmarshalEntry(reader)
 	return
 }
 
 // MarshalChain serializes a chain data to a writer
-func (c *Chain) MarshalChain(writer io.Writer) (err error) {
+func (holo *Holochain) MarshalChain(writer io.Writer) (err error) {
 
-	var l = uint64(len(c.Headers))
+	var l = uint64(len(holo.chain.Headers))
+	//Debugf("MC Hdrs cnt: %v\n", l)
 	err = binary.Write(writer, binary.LittleEndian, l)
 	if err != nil {
 		return err
 	}
 
-	for i, h := range c.Headers {
-		e := c.Entries[i]
-		err = writePair(writer, h, e)
-		if err != nil {
-			return
+	if l > 0 {
+		for i, h := range holo.chain.Headers {
+			e := holo.chain.Entries[i]
+			err = holo.writePair(writer, h, e)
+			if err != nil {
+				return
+			}
 		}
+		hash := holo.chain.Hashes[l-1]
+		//Debugf("MCMH,WT: %v\n", holo.WireType)
+		err = hash.MarshalHash(writer, holo.WireType)
+	} else {
+		Debug("No Entries to marshal\n")
 	}
-
-	hash := c.Hashes[l-1]
-	err = hash.MarshalHash(writer)
 
 	return
 }
@@ -303,35 +316,39 @@ func (c *Chain) addPair(header *Header, entry Entry, i int) {
 }
 
 // UnmarshalChain unserializes a chain from a reader
-func UnmarshalChain(reader io.Reader) (c *Chain, err error) {
+func (holo *Holochain) UnmarshalChain(reader io.Reader) (err error) {
 	defer func() {
 		if err != nil {
 			Debugf("error unmarshaling chain:%s", err.Error())
 		}
 	}()
-	c = NewChain()
+	chain := holo.chain
 	var l, i uint64
 	err = binary.Read(reader, binary.LittleEndian, &l)
 	if err != nil {
+		if err.Error() == "EOF" {
+			err = nil
+		}
 		return
 	}
 	for i = 0; i < l; i++ {
 		var header *Header
 		var e Entry
-		header, e, err = readPair(reader)
+		header, e, err = holo.readPair(reader)
 		if err != nil {
 			return
 		}
-		c.addPair(header, e, int(i))
+		chain.addPair(header, e, int(i))
 	}
 	// decode final hash
 	var h Hash
-	err = h.UnmarshalHash(reader)
+	//Debugf("MCUMH,WT: %v\n", holo.WireType)
+	err = h.UnmarshalHash(reader, holo.WireType)
 	if err != nil {
 		return
 	}
-	c.Hashes = append(c.Hashes, h)
-	c.Hmap[h.String()] = int(i - 1)
+	holo.chain.Hashes = append(holo.chain.Hashes, h)
+	holo.chain.Hmap[h.String()] = int(i - 1)
 	return
 }
 
@@ -350,23 +367,24 @@ func (c *Chain) Walk(fn WalkerFn) (err error) {
 // Validate traverses chain confirming the hashes
 // @TODO confirm that TypeLinks are also correct
 // @TODO confirm signatures
-func (c *Chain) Validate(h HashSpec) (err error) {
-	l := len(c.Headers)
+// Does a Holochain have a one-to-one with a Chain? We shouldn't need both
+func (holo *Holochain) ValidateChain() (err error) {
+	l := len(holo.chain.Headers)
 	for i := l - 1; i >= 0; i-- {
-		hd := c.Headers[i]
+		hd := holo.chain.Headers[i]
 		var hash Hash
 
 		// hash the header
-		hash, _, err = hd.Sum(h)
+		hash, _, err = hd.Sum(holo)
 		if err != nil {
 			return
 		}
 
 		var nexth Hash
 		if i == l-1 {
-			nexth = c.Hashes[i]
+			nexth = holo.chain.Hashes[i]
 		} else {
-			nexth = c.Headers[i+1].HeaderLink
+			nexth = holo.chain.Headers[i+1].HeaderLink
 		}
 
 		if !bytes.Equal(hash.H, nexth.H) {
@@ -375,11 +393,11 @@ func (c *Chain) Validate(h HashSpec) (err error) {
 		}
 
 		var b []byte
-		b, err = c.Entries[i].Marshal()
+		b, err = holo.chain.Entries[i].Marshal(holo.WireType)
 		if err != nil {
 			return
 		}
-		err = hash.Sum(h, b)
+		err = hash.Sum(holo, b)
 		if err != nil {
 			return
 		}

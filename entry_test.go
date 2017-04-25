@@ -9,13 +9,13 @@ import (
 )
 
 func TestGob(t *testing.T) {
-	g := GobEntry{C: mkTestHeader("evenNumbers")}
-	v, err := g.Marshal()
+	g := EntryObj{C: mkTestHeader("evenNumbers")}
+	v, err := g.Marshal(WIRE_GOB)
 	Convey("it should encode", t, func() {
 		So(err, ShouldBeNil)
 	})
-	var g2 GobEntry
-	err = g2.Unmarshal(v)
+	var g2 EntryObj
+	err = g2.Unmarshal(v, WIRE_GOB)
 	Convey("it should decode", t, func() {
 		sg1 := fmt.Sprintf("%v", g)
 		sg2 := fmt.Sprintf("%v", g)
@@ -30,15 +30,15 @@ func TestJSONEntry(t *testing.T) {
 	v,err := g.Marshal()
 	ExpectNoErr(t,err)
 	var g2 JSONEntry
-	err = g2.Unmarshal(v)
+	err = g2.Unmarshal(v, WIRE_JSON)
 	ExpectNoErr(t,err)
 	if g2!=g {t.Error("expected JSON match! "+fmt.Sprintf("%v",g)+" "+fmt.Sprintf("%v",g2))}
 	*/
 }
 
 func TestJSONSchemaValidator(t *testing.T) {
-	d, _ := setupTestService()
-	defer cleanupTestDir(d)
+	cleanup, s := setupTestService()
+	defer cleanup()
 
 	schema := `{
 	"title": "Profile Schema",
@@ -60,6 +60,9 @@ func TestJSONSchemaValidator(t *testing.T) {
 }`
 	ed := EntryDef{Schema: "schema_profile.json"}
 
+	d := s.Path
+	Debugf(" %v\n", d)
+	execCmd("ls", "-ltR", d)
 	if err := writeFile(d, ed.Schema, []byte(schema)); err != nil {
 		panic(err)
 	}
@@ -89,14 +92,15 @@ func TestJSONSchemaValidator(t *testing.T) {
 
 func TestMarshalEntry(t *testing.T) {
 
-	e := GobEntry{C: "some  data"}
+	e := EntryObj{C: "some  data"}
+	holo := Holochain{HashType: HASH_SHA, WireType: WIRE_GOB}
 
 	Convey("it should round-trip", t, func() {
 		var b bytes.Buffer
-		err := MarshalEntry(&b, &e)
+		err := holo.MarshalEntry(&b, &e)
 		So(err, ShouldBeNil)
 		var ne Entry
-		ne, err = UnmarshalEntry(&b)
+		ne, err = holo.UnmarshalEntry(&b)
 		So(err, ShouldBeNil)
 		So(fmt.Sprintf("%v", ne), ShouldEqual, fmt.Sprintf("%v", &e))
 	})

@@ -243,7 +243,7 @@ func (z *ZygoNucleus) get(env *zygo.Glisp, h *Holochain, hash string) (result *z
 	var entry interface{}
 	entry, err = h.Get(hash)
 	if err == nil {
-		t := entry.(*GobEntry)
+		t := entry.(*EntryObj)
 		// @TODO figure out encoding by entry type.
 		j, err := json.Marshal(t.C)
 		if err == nil {

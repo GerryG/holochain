@@ -100,7 +100,7 @@ func TestNodeSend(t *testing.T) {
 	h.node = node1
 	os.MkdirAll(h.DBPath(), os.ModePerm)
 	h.dht = NewDHT(&h)
-	h.chain = NewChain()
+	h.NewChain()
 
 	Convey("It should start the DHT protocol", t, func() {
 		err := h.dht.StartDHT()
@@ -155,12 +155,12 @@ func TestMessageCoding(t *testing.T) {
 	m := node.NewMessage(PUT_REQUEST, "foo")
 	var d []byte
 	Convey("It should encode and decode messages", t, func() {
-		d, err = m.Encode()
+		d, err = m.Encode(node.WireType)
 		So(err, ShouldBeNil)
 
 		var m2 Message
 		r := bytes.NewReader(d)
-		err = m2.Decode(r)
+		err = m2.Decode(r, node.WireType)
 		So(err, ShouldBeNil)
 
 		So(fmt.Sprintf("%v", m), ShouldEqual, fmt.Sprintf("%v", &m2))
@@ -171,25 +171,25 @@ func TestFingerprintMessage(t *testing.T) {
 	Convey("it should create a unique fingerprint for messages", t, func() {
 		var id peer.ID
 		var mp *Message
-		f, err := mp.Fingerprint()
+		f, err := mp.Fingerprint(WIRE_GOB)
 		So(err, ShouldBeNil)
 		So(f.String(), ShouldEqual, NullHash().String())
 		now := time.Unix(1, 1) // pick a constant time so the test will always work
 		m := Message{Type: PUT_REQUEST, Time: now, Body: "foo", From: id}
-		f, err = m.Fingerprint()
+		f, err = m.Fingerprint(WIRE_GOB)
 		So(err, ShouldBeNil)
 		So(f.String(), ShouldEqual, "QmTZf2qqYiKbJbQVpFyidMVyAtb1S4xQNV52LcX9LDVTQn")
 		m = Message{Type: PUT_REQUEST, Time: now, Body: "foo1", From: id}
-		f, err = m.Fingerprint()
+		f, err = m.Fingerprint(WIRE_GOB)
 		So(err, ShouldBeNil)
 		So(f.String(), ShouldEqual, "QmP2WUSMWAuZrX2nqWcEyei7GDCwVaetkynQESFDrHNkGa")
 		now = time.Unix(1, 2) // pick a constant time so the test will always work
 		m = Message{Type: PUT_REQUEST, Time: now, Body: "foo", From: id}
-		f, err = m.Fingerprint()
+		f, err = m.Fingerprint(WIRE_GOB)
 		So(err, ShouldBeNil)
 		So(f.String(), ShouldEqual, "QmTZf2qqYiKbJbQVpFyidMVyAtb1S4xQNV52LcX9LDVTQn")
 		m = Message{Type: GET_REQUEST, Time: now, Body: "foo", From: id}
-		f, err = m.Fingerprint()
+		f, err = m.Fingerprint(WIRE_GOB)
 		So(err, ShouldBeNil)
 		So(f.String(), ShouldEqual, "Qmd7v7bxE7xRCj3Amhx8kyj7DbUGJdbKzuiUUahx3ARPec")
 	})

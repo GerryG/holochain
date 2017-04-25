@@ -11,33 +11,33 @@ import (
 )
 
 func TestNewHeader(t *testing.T) {
-	h, key, now := chainTestSetup()
+	holo, _, key, now := chainTestSetup("")
 
 	Convey("it should make a header and return its hash", t, func() {
-		e := GobEntry{C: "some data"}
+		e := EntryObj{C: "some data"}
 		ph := NullHash()
-		hash, header, err := newHeader(h, now, "evenNumbers", &e, key, ph, ph)
+		hash, header, err := holo.NewHeader(now, "evenNumbers", &e, key, ph, ph)
 
 		So(err, ShouldBeNil)
 		// encode the header and create a hash of it
-		b, _ := header.Marshal()
+		b, _ := header.Marshal(holo)
 		var h2 Hash
-		h2.Sum(h, b)
+		h2.Sum(holo, b)
 		So(h2.String(), ShouldEqual, hash.String())
 	})
 }
 
 func TestMarshalHeader(t *testing.T) {
-	h, key, now := chainTestSetup()
+	holo, h, key, now := chainTestSetup("")
 
-	e := GobEntry{C: "some  data"}
+	e := EntryObj{C: "some  data"}
 	hd := testHeader(h, "evenNumbers", &e, key, now)
 
 	Convey("it should round-trip", t, func() {
-		b, err := hd.Marshal()
+		b, err := hd.Marshal(holo)
 		So(err, ShouldBeNil)
 		var nh Header
-		err = (&nh).Unmarshal(b, 34)
+		err = (&nh).Unmarshal(holo, b, 34)
 		So(err, ShouldBeNil)
 		So(fmt.Sprintf("%v", nh), ShouldEqual, fmt.Sprintf("%v", *hd))
 	})
@@ -48,10 +48,10 @@ func TestMarshalSignature(t *testing.T) {
 	Convey("it should round-trip an empty signature", t, func() {
 		var b bytes.Buffer
 
-		err := MarshalSignature(&b, &s)
+		err := MarshalSignature(&b, &s, WIRE_GOB)
 		So(err, ShouldBeNil)
 		var ns Signature
-		err = UnmarshalSignature(&b, &ns)
+		err = UnmarshalSignature(&b, &ns, WIRE_GOB)
 		So(err, ShouldBeNil)
 		So(fmt.Sprintf("%v", ns), ShouldEqual, fmt.Sprintf("%v", s))
 	})
@@ -62,10 +62,10 @@ func TestMarshalSignature(t *testing.T) {
 		r := make([]byte, 64)
 		_, err := rand.Read(r)
 		s.S = r
-		err = MarshalSignature(&b, &s)
+		err = MarshalSignature(&b, &s, WIRE_GOB)
 		So(err, ShouldBeNil)
 		var ns Signature
-		err = UnmarshalSignature(&b, &ns)
+		err = UnmarshalSignature(&b, &ns, WIRE_GOB)
 		So(err, ShouldBeNil)
 		So(fmt.Sprintf("%v", ns), ShouldEqual, fmt.Sprintf("%v", s))
 	})
@@ -73,7 +73,7 @@ func TestMarshalSignature(t *testing.T) {
 
 //----- test util functions
 
-func testHeader(h HashSpec, t string, entry Entry, key ic.PrivKey, now time.Time) *Header {
+func testHeader(h HashType, t string, entry Entry, key ic.PrivKey, now time.Time) *Header {
 	hd := mkTestHeader(t)
 	sig, err := key.Sign(hd.EntryLink.H)
 	if err != nil {

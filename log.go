@@ -16,6 +16,17 @@ import (
 	"time"
 )
 
+// Loggers holds the logging structures for the different parts of the system
+// Used by Config (type struct)
+type Loggers struct {
+	App        Logger
+	DHT        Logger
+	Gossip     Logger
+	TestPassed Logger
+	TestFailed Logger
+	TestInfo   Logger
+}
+
 // Logger holds logger configuration
 type Logger struct {
 	Enabled bool
@@ -26,6 +37,41 @@ type Logger struct {
 	w       io.Writer
 }
 
+func NewAppLoggers() (loggers Loggers) {
+	loggers = Loggers{
+		App:        Logger{Format: "%{color:cyan}%{message}", Enabled: true},
+		DHT:        Logger{Format: "%{color:yellow}%{time} DHT: %{message}"},
+		Gossip:     Logger{Format: "%{color:blue}%{time} Gossip: %{message}"},
+		TestPassed: Logger{Format: "%{color:green}%{message}", Enabled: true},
+		TestFailed: Logger{Format: "%{color:red}%{message}", Enabled: true},
+		TestInfo:   Logger{Format: "%{message}", Enabled: true},
+	}
+	return
+}
+
+var debugLog Logger
+var infoLog Logger
+
+func Debug(m string) {
+	debugLog.Log(m)
+}
+
+func Debugf(m string, args ...interface{}) {
+	debugLog.Logf(m, args...)
+}
+
+func Info(m string) {
+	infoLog.Log(m)
+}
+
+func Infof(m string, args ...interface{}) {
+	infoLog.Logf(m, args...)
+}
+
+func initLoggers() {
+	infoLog.New(nil)
+	debugLog.New(nil)
+}
 func (l *Logger) setupColor(f string) (colorResult *color.Color, result string) {
 	re := regexp.MustCompile(`(.*)\%\{color:([^\}]+)\}(.*)`)
 	x := re.FindStringSubmatch(f)

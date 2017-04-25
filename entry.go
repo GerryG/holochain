@@ -8,7 +8,7 @@ package holochain
 
 import (
 	"encoding/binary"
-	"encoding/json"
+	//"encoding/json"
 	"github.com/lestrrat/go-jsschema"
 	"github.com/lestrrat/go-jsval"
 	"github.com/lestrrat/go-jsval/builder"
@@ -55,10 +55,14 @@ type Link struct {
 
 // Entry describes serialization and deserialziation of entry data
 type Entry interface {
-	Marshal() ([]byte, error)
-	Unmarshal([]byte) error
+	Marshal(string) ([]byte, error)
+	Unmarshal([]byte, string) error
 	Content() interface{}
-	Sum(s HashSpec) (hash Hash, err error)
+	Sum(*Holochain) (Hash, error)
+}
+
+type EntryObj struct {
+	C interface{}
 }
 
 // SchemaValidator interface for schema validation
@@ -66,20 +70,10 @@ type SchemaValidator interface {
 	Validate(interface{}) error
 }
 
-// GobEntry is a structure for implementing Gob encoding of Entry content
-type GobEntry struct {
-	C interface{}
-}
-
-// JSONEntry is a structure for implementing JSON encoding of Entry content
-type JSONEntry struct {
-	C interface{}
-}
-
 // MarshalEntry serializes an entry to a writer
-func MarshalEntry(writer io.Writer, e Entry) (err error) {
+func (holo *Holochain) MarshalEntry(writer io.Writer, e Entry) (err error) {
 	var b []byte
-	b, err = e.Marshal()
+	b, err = e.Marshal(holo.WireType)
 	l := uint64(len(b))
 	err = binary.Write(writer, binary.LittleEndian, l)
 	if err != nil {
@@ -90,7 +84,7 @@ func MarshalEntry(writer io.Writer, e Entry) (err error) {
 }
 
 // UnmarshalEntry unserializes an entry from a reader
-func UnmarshalEntry(reader io.Reader) (e Entry, err error) {
+func (holo *Holochain) UnmarshalEntry(reader io.Reader) (e Entry, err error) {
 	var l uint64
 	err = binary.Read(reader, binary.LittleEndian, &l)
 	if err != nil {
@@ -102,8 +96,8 @@ func UnmarshalEntry(reader io.Reader) (e Entry, err error) {
 		return
 	}
 
-	var g GobEntry
-	err = g.Unmarshal(b)
+	var g EntryObj
+	err = g.Unmarshal(b, holo.WireType)
 
 	e = &g
 	return
@@ -111,48 +105,32 @@ func UnmarshalEntry(reader io.Reader) (e Entry, err error) {
 
 // implementation of Entry interface with gobs
 
-func (e *GobEntry) Marshal() (b []byte, err error) {
-	b, err = ByteEncoder(&e.C)
+func (e *EntryObj) Marshal(coding string) (b []byte, err error) {
+	b, err = ByteEncoder(&e.C, coding)
 	return
 }
-func (e *GobEntry) Unmarshal(b []byte) (err error) {
-	err = ByteDecoder(b, &e.C)
+func (e *EntryObj) Unmarshal(b []byte, coding string) (err error) {
+	err = ByteDecoder(b, &e.C, coding)
 	return
 }
 
-func (e *GobEntry) Content() interface{} { return e.C }
+func (e *EntryObj) Content() interface{} { return e.C }
 
-func (e *GobEntry) Sum(s HashSpec) (h Hash, err error) {
+func (e *EntryObj) Sum(holo *Holochain) (hash Hash, err error) {
 	// encode the entry into bytes
-	m, err := e.Marshal()
+	marshaled, err := e.Marshal(holo.WireType)
 	if err != nil {
 		return
 	}
 
 	// calculate the entry's hash and store it in the header
-	err = h.Sum(s, m)
+	err = hash.Sum(holo, marshaled)
 	if err != nil {
 		return
 	}
 
 	return
 }
-
-// implementation of Entry interface with JSON
-
-func (e *JSONEntry) Marshal() (b []byte, err error) {
-	j, err := json.Marshal(e.C)
-	if err != nil {
-		return
-	}
-	b = []byte(j)
-	return
-}
-func (e *JSONEntry) Unmarshal(b []byte) (err error) {
-	err = json.Unmarshal(b, &e.C)
-	return
-}
-func (e *JSONEntry) Content() interface{} { return e.C }
 
 type JSONSchemaValidator struct {
 	v *jsval.JSVal

@@ -19,8 +19,8 @@ type Hash struct {
 	H mh.Multihash
 }
 
-// HashSpec holds the info that tells what kind of hash this is
-type HashSpec struct {
+// HashType holds the info that tells what kind of hash this is
+type HashType struct {
 	Code   uint64
 	Length int
 }
@@ -40,8 +40,18 @@ func (h Hash) String() string {
 }
 
 // Sum builds a digest according to the specs in the Holochain
-func (h *Hash) Sum(hc HashSpec, data []byte) (err error) {
-	h.H, err = mh.Sum(data, hc.Code, hc.Length)
+func (hash *Hash) Sum(holo *Holochain, data []byte) (err error) {
+	coding := holo.WireType
+	Debugf("Sum %v <%v> %v\n", coding, coding == WIRE_GOB, WIRE_GOB)
+	switch coding {
+	case WIRE_GOB:
+		hspec := holo.HashSpec
+		hash.H, err = mh.Sum(data, hspec.Code, hspec.Length)
+	case WIRE_JSON:
+		err = errors.New("WIRE_JSON not implemented")
+	default:
+		err = errors.New("Bad coding " + coding)
+	}
 	return
 }
 
@@ -73,7 +83,9 @@ func (h *Hash) Equal(h2 *Hash) bool {
 }
 
 // MarshalHash writes a hash to a binary stream
-func (h *Hash) MarshalHash(writer io.Writer) (err error) {
+func (h *Hash) MarshalHash(writer io.Writer, coding string) (err error) {
+	// implement coding
+	Debugf("MH: %v <%v> %v\n", coding, coding == WIRE_GOB, WIRE_GOB)
 	if h.IsNullHash() {
 		b := make([]byte, 34)
 		err = binary.Write(writer, binary.LittleEndian, b)
@@ -88,15 +100,23 @@ func (h *Hash) MarshalHash(writer io.Writer) (err error) {
 }
 
 // UnmarshalHash reads a hash from a binary stream
-func (h *Hash) UnmarshalHash(reader io.Reader) (err error) {
+func (h *Hash) UnmarshalHash(reader io.Reader, coding string) (err error) {
 	b := make([]byte, 34)
-	err = binary.Read(reader, binary.LittleEndian, b)
-	if err == nil {
-		if b[0] == 0 {
-			h.H = NullHash().H
-		} else {
-			h.H = b
+	Debugf("UMH %v <%v> %v\n", coding, coding == WIRE_GOB, WIRE_GOB)
+	switch coding {
+	case WIRE_GOB:
+		err = binary.Read(reader, binary.LittleEndian, b)
+		if err == nil {
+			if b[0] == 0 {
+				h.H = NullHash().H
+			} else {
+				h.H = b
+			}
 		}
+	case WIRE_JSON:
+		err = errors.New("WIRE_JSON not implemented")
+	default:
+		err = errors.New("Bad coding " + coding)
 	}
 	return
 }

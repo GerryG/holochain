@@ -53,6 +53,7 @@ func (h *Holochain) ZomePath(z *Zome) string {
 func (h *Holochain) PrepareZomes(zomes map[string]Zome) (err error) {
 	for _, z := range zomes {
 		zpath := h.ZomePath(&z)
+		Debugf("PZ path: %v\nCode:%v\n", h.ZomePath(&z), z.Code)
 		if !fileExists(zpath + "/" + z.Code) {
 			fmt.Printf("%v", z)
 			err = errors.New("DNA specified code file missing: " + z.Code)
@@ -70,7 +71,11 @@ func (h *Holochain) PrepareZomes(zomes map[string]Zome) (err error) {
 						return
 					}
 					z.Entries[name] = e
+				} else {
+					Debugf("Suffix[%v]? %v\n", name, zpath+"/"+sc)
 				}
+			} else {
+				Debugf("schema[%v]?\n", name)
 			}
 		}
 	}
@@ -80,9 +85,9 @@ func (h *Holochain) PrepareZomes(zomes map[string]Zome) (err error) {
 	return
 }
 
-func (zome *Zome) GetNucleus(chain *Holochain) (err error) {
+func (zome *Zome) GetNucleus(holo *Holochain) (err error) {
 	var n Nucleus
-	n, err = chain.makeNucleus(zome)
+	n, err = holo.makeNucleus(zome)
 	if err == nil {
 		err = n.ChainGenesis()
 		if err != nil {
@@ -92,14 +97,16 @@ func (zome *Zome) GetNucleus(chain *Holochain) (err error) {
 	return
 }
 
-func (zome *Zome) GenZomeDNA(chain *Holochain) (err error) {
+func (zome *Zome) GenZomeDNA(holo *Holochain) (err error) {
 	var bytes []byte
-	zpath := chain.ZomePath(zome)
+	zpath := holo.ZomePath(zome)
+	Debugf("Zome path %v\nZ:%v\nCode:%v\n", zpath, zome, zome.Code)
 	bytes, err = readFile(zpath, zome.Code)
 	if err != nil {
 		return
 	}
-	err = zome.CodeHash.Sum(chain.hashSpec, bytes)
+	err = zome.CodeHash.Sum(holo, bytes)
+	Debugf("Hash: %v\n", zome.CodeHash.String())
 	if err != nil {
 		return
 	}
@@ -110,12 +117,15 @@ func (zome *Zome) GenZomeDNA(chain *Holochain) (err error) {
 			if err != nil {
 				return
 			}
-			err = entry.SchemaHash.Sum(chain.hashSpec, bytes)
+			err = entry.SchemaHash.Sum(holo, bytes)
+			Debugf("Hashed %v, %v\n", name, string(bytes))
 			if err != nil {
 				return
 			}
+			Debugf("Store zome:%v\n%v\n", name, entry)
 			zome.Entries[name] = entry
 		}
 	}
+	Debugf("entries %v\n", zome.Entries)
 	return
 }

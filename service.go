@@ -59,6 +59,7 @@ func IsInitialized(root string) bool {
 // and writes them out to configuration files in the root path (making the
 // directory if necessary)
 func Init(root string, agent AgentName) (service *Service, err error) {
+	Debugf("Init service %v\n", root)
 	err = os.MkdirAll(root, os.ModePerm)
 	if err != nil {
 		return

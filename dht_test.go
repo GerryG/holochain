@@ -24,8 +24,8 @@ func TestNewDHT(t *testing.T) {
 }
 
 func TestSetupDHT(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 
 	err := h.dht.SetupDHT()
 	Convey("it should add the holochain ID to the DHT", t, func() {
@@ -49,7 +49,7 @@ func TestSetupDHT(t *testing.T) {
 		e, _, _ = h.chain.GetEntry(h.agentHash)
 
 		var b []byte
-		b, _ = e.Marshal()
+		b, _ = e.Marshal(h.WireType)
 
 		So(string(data), ShouldEqual, string(b))
 	})
@@ -66,8 +66,8 @@ func TestSetupDHT(t *testing.T) {
 }
 
 func TestPutGet(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 
 	dht := h.dht
 	var id = h.id
@@ -153,8 +153,8 @@ func TestLinking(t *testing.T) {
 }
 
 func TestDel(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 
 	dht := h.dht
 	var id = h.id
@@ -183,8 +183,8 @@ func TestDel(t *testing.T) {
 }
 
 func TestFindNodeForHash(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 
 	Convey("It should find a node", t, func() {
 
@@ -201,8 +201,8 @@ func TestFindNodeForHash(t *testing.T) {
 }
 
 func TestSend(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 
 	node, err := NewNode("/ip4/127.0.0.1/tcp/1234", h.id, h.Agent().PrivKey())
 	if err != nil {
@@ -219,7 +219,7 @@ func TestSend(t *testing.T) {
 	})
 
 	now := time.Unix(1, 1) // pick a constant time so the test will always work
-	e := GobEntry{C: "4"}
+	e := EntryObj{C: "4"}
 	_, hd, err := h.NewEntry(now, "evenNumbers", &e)
 	if err != nil {
 		panic(err)
@@ -245,8 +245,8 @@ func TestSend(t *testing.T) {
 }
 
 func TestDHTReceiver(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 
 	Convey("PUT_REQUEST should fail if body isn't a hash", t, func() {
 		m := h.node.NewMessage(PUT_REQUEST, "foo")
@@ -270,7 +270,7 @@ func TestDHTReceiver(t *testing.T) {
 	})
 
 	now := time.Unix(1, 1) // pick a constant time so the test will always work
-	e := GobEntry{C: "124"}
+	e := EntryObj{C: "124"}
 	_, hd, _ := h.NewEntry(now, "evenNumbers", &e)
 	hash = hd.EntryLink
 
@@ -292,11 +292,11 @@ func TestDHTReceiver(t *testing.T) {
 	})
 
 	someData := `{"firstName":"Zippy","lastName":"Pinhead"}`
-	e = GobEntry{C: someData}
+	e = EntryObj{C: someData}
 	_, hd, _ = h.NewEntry(now, "profile", &e)
 	profileHash := hd.EntryLink
 
-	ee := GobEntry{C: fmt.Sprintf(`{"Links":[{"Base":"%s","Link":"%s","Tag":"4stars"}]}`, hash.String(), profileHash.String())}
+	ee := EntryObj{C: fmt.Sprintf(`{"Links":[{"Base":"%s","Link":"%s","Tag":"4stars"}]}`, hash.String(), profileHash.String())}
 	_, le, _ := h.NewEntry(time.Now(), "rating", &ee)
 
 	Convey("LINK_REQUEST should store links", t, func() {
@@ -345,8 +345,8 @@ func TestDHTReceiver(t *testing.T) {
 		So(err, ShouldBeNil)
 
 		data, entryType, status, _ := h.dht.get(hash)
-		var e GobEntry
-		e.Unmarshal(data)
+		var e EntryObj
+		e.Unmarshal(data, h.WireType)
 		So(e.C, ShouldEqual, "124")
 		So(entryType, ShouldEqual, "evenNumbers")
 		So(status, ShouldEqual, DELETED)
@@ -356,11 +356,11 @@ func TestDHTReceiver(t *testing.T) {
 
 /*
 func TestHandleChangeReqs(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 
 	now := time.Unix(1, 1) // pick a constant time so the test will always work
-	e := GobEntry{C: "{\"prime\":7}"}
+	e := EntryObj{C: "{\"prime\":7}"}
 	_, hd, err := h.NewEntry(now, "primes", &e)
 	if err != nil {
 		panic(err)
@@ -375,7 +375,7 @@ func TestHandleChangeReqs(t *testing.T) {
 		data, et, _, err := h.dht.get(hd.EntryLink)
 		So(err, ShouldBeNil)
 		So(et, ShouldEqual, "primes")
-		b, _ := e.Marshal()
+		b, _ := e.Marshal(h.WireType)
 		So(fmt.Sprintf("%v", data), ShouldEqual, fmt.Sprintf("%v", b))
 	})
 
