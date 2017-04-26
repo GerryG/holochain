@@ -45,9 +45,9 @@ func TestInit(t *testing.T) {
 }
 
 func TestLoadService(t *testing.T) {
-	d, service := setupTestService()
+	cleanup, service := setupTestService()
 	root := service.Path
-	defer cleanupTestDir(d)
+	defer cleanup()
 	Convey("loading service from disk should set up the struct", t, func() {
 		s, err := LoadService(root)
 		So(err, ShouldEqual, nil)
@@ -77,8 +77,8 @@ func TestValidateServiceConfig(t *testing.T) {
 }
 
 func TestConfiguredChains(t *testing.T) {
-	d, s, h := setupTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, s, h := genTestChain("test")
+	defer cleanup()
 
 	Convey("Configured chains should return a hash of all the chains in the Service", t, func() {
 		chains, err := s.ConfiguredChains()

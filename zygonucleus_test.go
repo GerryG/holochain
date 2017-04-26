@@ -22,8 +22,8 @@ func TestNewZygoNucleus(t *testing.T) {
 	})
 
 	Convey("it should have an App structure:", t, func() {
-		d, _, h := prepareTestChain("test")
-		defer cleanupTestDir(d)
+		cleanup, _, h := prepareTestChain("test")
+		defer cleanup()
 
 		v, err := NewZygoNucleus(h, "")
 		So(err, ShouldBeNil)
@@ -54,8 +54,8 @@ func TestNewZygoNucleus(t *testing.T) {
 	})
 
 	Convey("it should have an App structure:", t, func() {
-		d, _, h := prepareTestChain("test")
-		defer cleanupTestDir(d)
+		cleanup, _, h := prepareTestChain("test")
+		defer cleanup()
 
 		v, err := NewZygoNucleus(h, "")
 		So(err, ShouldBeNil)
@@ -68,8 +68,8 @@ func TestNewZygoNucleus(t *testing.T) {
 	})
 
 	Convey("should have the built in functions:", t, func() {
-		d, _, h := prepareTestChain("test")
-		defer cleanupTestDir(d)
+		cleanup, _, h := prepareTestChain("test")
+		defer cleanup()
 
 		v, err := NewZygoNucleus(h, "")
 		So(err, ShouldBeNil)
@@ -135,32 +135,32 @@ foo
 {"Atype":"hash", "EntryLink":"QmNiCwBNA8MWDADTFVq1BonUEJbS2SvjAoNkZZrhEwcuU2", "Type":"evenNumbers", "Time":"1970-01-01T00:00:01Z", "zKeyOrder":["EntryLink", "Type", "Time"]}
 ["fakehashvalue"]
 `, func() {
-			err = v.ValidateCommit(&d, &GobEntry{C: "foo"}, &hdr, []string{"fakehashvalue"})
+			err = v.ValidateCommit(&d, &EntryObj{C: "foo"}, &hdr, []string{"fakehashvalue"})
 			So(err, ShouldBeNil)
 		})
 	})
 	Convey("should run an entry value against the defined validator for string data", t, func() {
 		v, err := NewZygoNucleus(nil, `(defn validateCommit [name entry header sources] (cond (== entry "fish") true false))`)
 		d := EntryDef{Name: "evenNumbers", DataFormat: DataFormatString}
-		err = v.ValidateCommit(&d, &GobEntry{C: "cow"}, nil, nil)
+		err = v.ValidateCommit(&d, &EntryObj{C: "cow"}, nil, nil)
 		So(err.Error(), ShouldEqual, "Invalid entry: cow")
-		err = v.ValidateCommit(&d, &GobEntry{C: "fish"}, nil, nil)
+		err = v.ValidateCommit(&d, &EntryObj{C: "fish"}, nil, nil)
 		So(err, ShouldBeNil)
 	})
 	Convey("should run an entry value against the defined validator for zygo data", t, func() {
 		v, err := NewZygoNucleus(nil, `(defn validateCommit [name entry header sources] (cond (== entry "fish") true false))`)
 		d := EntryDef{Name: "evenNumbers", DataFormat: DataFormatRawZygo}
-		err = v.ValidateCommit(&d, &GobEntry{C: "\"cow\""}, nil, nil)
+		err = v.ValidateCommit(&d, &EntryObj{C: "\"cow\""}, nil, nil)
 		So(err.Error(), ShouldEqual, "Invalid entry: \"cow\"")
-		err = v.ValidateCommit(&d, &GobEntry{C: "\"fish\""}, nil, nil)
+		err = v.ValidateCommit(&d, &EntryObj{C: "\"fish\""}, nil, nil)
 		So(err, ShouldBeNil)
 	})
 	Convey("should run an entry value against the defined validator for json data", t, func() {
 		v, err := NewZygoNucleus(nil, `(defn validateCommit [name entry header sources] (cond (== (hget entry data:) "fish") true false))`)
 		d := EntryDef{Name: "evenNumbers", DataFormat: DataFormatJSON}
-		err = v.ValidateCommit(&d, &GobEntry{C: `{"data":"cow"}`}, nil, nil)
+		err = v.ValidateCommit(&d, &EntryObj{C: `{"data":"cow"}`}, nil, nil)
 		So(err.Error(), ShouldEqual, `Invalid entry: {"data":"cow"}`)
-		err = v.ValidateCommit(&d, &GobEntry{C: `{"data":"fish"}`}, nil, nil)
+		err = v.ValidateCommit(&d, &EntryObj{C: `{"data":"fish"}`}, nil, nil)
 		So(err, ShouldBeNil)
 	})
 }
@@ -188,11 +188,11 @@ some tag value
 }
 
 func TestZygoExposeCall(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 
 	zome, _ := h.GetZome("zySampleZome")
-	v, err := h.makeNucleus(zome)
+	v, err := h.NewNucleus(zome.Name, zome)
 	if err != nil {
 		panic(err)
 	}
@@ -200,32 +200,32 @@ func TestZygoExposeCall(t *testing.T) {
 
 	Convey("should allow calling exposed STRING based functions", t, func() {
 		cater, _ := h.GetFunctionDef(zome, "testStrFn1")
-		result, err := z.Call(cater, "fish \"zippy\"")
+		result, err := z.Call(&cater, "fish \"zippy\"")
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, "result: fish \"zippy\"")
 
 		adder, _ := h.GetFunctionDef(zome, "testStrFn2")
-		result, err = z.Call(adder, "10")
+		result, err = z.Call(&adder, "10")
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, "12")
 	})
 	Convey("should allow calling exposed JSON based functions", t, func() {
 		times2, _ := h.GetFunctionDef(zome, "testJsonFn1")
-		result, err := z.Call(times2, `{"input": 2}`)
+		result, err := z.Call(&times2, `{"input": 2}`)
 		So(err, ShouldBeNil)
 		So(string(result.([]byte)), ShouldEqual, `{"Atype":"hash", "input":2, "output":4, "zKeyOrder":["input", "output"]}`)
 	})
 	Convey("should allow a function declared with JSON parameter to be called with no parameter", t, func() {
 		emptyParametersJson, _ := h.GetFunctionDef(zome, "testJsonFn2")
-		result, err := z.Call(emptyParametersJson, "")
+		result, err := z.Call(&emptyParametersJson, "")
 		So(err, ShouldBeNil)
 		So(string(result.([]byte)), ShouldEqual, "[{\"Atype\":\"hash\", \"a\":\"b\", \"zKeyOrder\":[\"a\"]}]")
 	})
 }
 
 func TestZygoDHT(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 
 	hash, _ := NewHash("QmY8Mzg9F69e5P9AoQPYat6x5HEhc1TVGs11tmfNSzkqh2")
 	Convey("get should return hash not found if it doesn't exist", t, func() {

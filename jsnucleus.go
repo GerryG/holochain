@@ -265,7 +265,7 @@ func NewJSNucleus(h *Holochain, code string) (n Nucleus, err error) {
 
 		entry, err := h.Get(hashstr)
 		if err == nil {
-			t := entry.(*GobEntry)
+			t := entry.(*EntryObj)
 			result, err = z.vm.ToValue(t)
 			return
 		}

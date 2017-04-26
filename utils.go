@@ -57,10 +57,8 @@ func writeFile(path string, file string, data []byte) error {
 	return err
 }
 
-func readFile(path string, file string) (data []byte, err error) {
-	p := path + "/" + file
-	data, err = ioutil.ReadFile(p)
-	return data, err
+func readFile(path string, file string) ([]byte, error) {
+	return ioutil.ReadFile(path + "/" + file)
 }
 
 func mkErr(err string) error {

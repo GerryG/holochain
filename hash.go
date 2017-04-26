@@ -19,8 +19,8 @@ type Hash struct {
 	H mh.Multihash
 }
 
-// HashSpec holds the info that tells what kind of hash this is
-type HashSpec struct {
+// HashType holds the info that tells what kind of hash this is
+type HashType struct {
 	Code   uint64
 	Length int
 }
@@ -40,8 +40,9 @@ func (h Hash) String() string {
 }
 
 // Sum builds a digest according to the specs in the Holochain
-func (h *Hash) Sum(hc HashSpec, data []byte) (err error) {
-	h.H, err = mh.Sum(data, hc.Code, hc.Length)
+func (hash *Hash) Sum(holo *Holochain, data []byte) (err error) {
+	hspec := holo.HashSpec
+	hash.H, err = mh.Sum(data, hspec.Code, hspec.Length)
 	return
 }
 

@@ -575,7 +575,7 @@ func DHTReceiver(h *Holochain, m *Message) (response interface{}, err error) {
 			var b []byte
 			b, _, _, err = h.dht.get(t.H)
 			if err == nil {
-				var e GobEntry
+				var e EntryObj
 				err = e.Unmarshal(b)
 				if err == nil {
 					response = &e
