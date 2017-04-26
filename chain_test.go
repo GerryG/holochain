@@ -51,6 +51,8 @@ func TestNewChainFromFile(t *testing.T) {
 
 	err = holo.NewChainFromFile()
 	Convey("should continue to append data after reload", t, func() {
+		Debugf("??%v\n", holo.rootPath)
+		execCmd("ls", "-ltr", holo.rootPath)
 		So(err, ShouldBeNil)
 		So(holo.chain.String(), ShouldEqual, dump)
 	})

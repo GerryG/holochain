@@ -51,7 +51,8 @@ type Holochain struct {
 	Properties       map[string]string
 	PropertiesSchema string
 	HashType         string
-	BasedOn          Hash // holochain hash for base schemas and code
+	WireType         string // WIRE_* string constants
+	BasedOn          Hash   // holochain hash for base schemas and code
 	Zomes            map[string]Zome
 	RequiresVersion  int
 	//---- private values not serialized; initialized on Load
@@ -181,6 +182,7 @@ func NewHolochain(agent Agent, root string, format string) Holochain {
 		agent:           agent,
 		rootPath:        root,
 		encodingFormat:  format,
+		WireType:        WIRE_GOB,
 	}
 
 	// once the agent is set up we can calculate the id

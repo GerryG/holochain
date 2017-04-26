@@ -30,7 +30,7 @@ func TestJSONEntry(t *testing.T) {
 	v,err := g.Marshal()
 	ExpectNoErr(t,err)
 	var g2 JSONEntry
-	err = g2.Unmarshal(v)
+	err = g2.Unmarshal(v, WIRE_JSON)
 	ExpectNoErr(t,err)
 	if g2!=g {t.Error("expected JSON match! "+fmt.Sprintf("%v",g)+" "+fmt.Sprintf("%v",g2))}
 	*/
