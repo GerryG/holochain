@@ -100,7 +100,7 @@ func TestNodeSend(t *testing.T) {
 	h.node = node1
 	os.MkdirAll(h.DBPath(), os.ModePerm)
 	h.dht = NewDHT(&h)
-	h.chain = NewChain()
+	h.NewChain()
 
 	Convey("It should start the DHT protocol", t, func() {
 		err := h.dht.StartDHT()

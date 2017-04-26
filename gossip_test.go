@@ -12,15 +12,15 @@ import (
 to gossip about.  Currently test is DHTReceiver test
 
 func TestGossipReceiver(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 	h.dht.SetupDHT()
 
 }*/
 
 func TestGetFindGossiper(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 	dht := h.dht
 	Convey("FindGossiper should start empty", t, func() {
 		_, err := dht.FindGossiper()
@@ -65,8 +65,8 @@ func TestGetFindGossiper(t *testing.T) {
 }
 
 func TestGossipData(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 	dht := h.dht
 	Convey("Idx should be 3 at start (first puts are DNA, Agent & Key)", t, func() {
 		var idx int
@@ -77,7 +77,7 @@ func TestGossipData(t *testing.T) {
 
 	// simulate a handled put request
 	now := time.Unix(1, 1) // pick a constant time so the test will always work
-	e := GobEntry{C: "124"}
+	e := EntryObj{C: "124"}
 	_, hd, _ := h.NewEntry(now, "evenNumbers", &e)
 	hash := hd.EntryLink
 	m1 := h.node.NewMessage(PUT_REQUEST, PutReq{H: hash})
@@ -91,11 +91,11 @@ func TestGossipData(t *testing.T) {
 	dht.simHandleChangeReqs()
 
 	someData := `{"firstName":"Zippy","lastName":"Pinhead"}`
-	e = GobEntry{C: someData}
+	e = EntryObj{C: someData}
 	_, hd, _ = h.NewEntry(now, "profile", &e)
 	profileHash := hd.EntryLink
 
-	ee := GobEntry{C: fmt.Sprintf(`{"Links":[{"Base":"%s"},{"Link":"%s"},{"Tag":"4stars"}]}`, hash.String(), profileHash.String())}
+	ee := EntryObj{C: fmt.Sprintf(`{"Links":[{"Base":"%s"},{"Link":"%s"},{"Tag":"4stars"}]}`, hash.String(), profileHash.String())}
 	_, le, _ := h.NewEntry(time.Now(), "rating", &ee)
 	lr := LinkReq{Base: hash, Links: le.EntryLink}
 
@@ -134,8 +134,8 @@ func TestGossipData(t *testing.T) {
 }
 
 func TestGossip(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 	dht := h.dht
 
 	idx, _ := dht.GetIdx()

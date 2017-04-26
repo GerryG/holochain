@@ -22,8 +22,8 @@ func TestNewJSNucleus(t *testing.T) {
 	})
 
 	Convey("it should have an App structure:", t, func() {
-		d, _, h := prepareTestChain("test")
-		defer cleanupTestDir(d)
+		cleanup, _, h := prepareTestChain("test")
+		defer cleanup()
 
 		v, err := NewJSNucleus(h, "")
 		So(err, ShouldBeNil)
@@ -57,8 +57,8 @@ func TestNewJSNucleus(t *testing.T) {
 	})
 
 	Convey("it should have an HC structure:", t, func() {
-		d, _, h := prepareTestChain("test")
-		defer cleanupTestDir(d)
+		cleanup, _, h := prepareTestChain("test")
+		defer cleanup()
 
 		v, err := NewJSNucleus(h, "")
 		So(err, ShouldBeNil)
@@ -71,8 +71,8 @@ func TestNewJSNucleus(t *testing.T) {
 	})
 
 	Convey("should have the built in functions:", t, func() {
-		d, _, h := prepareTestChain("test")
-		defer cleanupTestDir(d)
+		cleanup, _, h := prepareTestChain("test")
+		defer cleanup()
 
 		v, err := NewJSNucleus(h, "")
 		So(err, ShouldBeNil)
@@ -235,55 +235,55 @@ func TestJSSanitize(t *testing.T) {
 }
 
 func TestJSExposeCall(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 
 	zome, _ := h.GetZome("jsSampleZome")
-	v, err := h.makeNucleus(zome)
+	v, err := h.NewNucleus(zome.Name, zome)
 	if err != nil {
 		panic(err)
 	}
 	z := v.(*JSNucleus)
 	Convey("should allow calling exposed STRING based functions", t, func() {
 		cater, _ := h.GetFunctionDef(zome, "testStrFn1")
-		result, err := z.Call(cater, "fish \"zippy\"")
+		result, err := z.Call(&cater, "fish \"zippy\"")
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, "result: fish \"zippy\"")
 
 		adder, _ := h.GetFunctionDef(zome, "testStrFn2")
-		result, err = z.Call(adder, "10")
+		result, err = z.Call(&adder, "10")
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, "12")
 	})
 	Convey("should allow calling exposed JSON based functions", t, func() {
 		times2, _ := h.GetFunctionDef(zome, "testJsonFn1")
-		result, err := z.Call(times2, `{"input": 2}`)
+		result, err := z.Call(&times2, `{"input": 2}`)
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, `{"input":2,"output":4}`)
 	})
 	Convey("should sanitize against bad strings", t, func() {
 		cater, _ := h.GetFunctionDef(zome, "testStrFn1")
-		result, err := z.Call(cater, "fish \"\nzippy\"")
+		result, err := z.Call(&cater, "fish \"\nzippy\"")
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, "result: fish \"zippy\"")
 	})
 	Convey("should sanitize against bad JSON", t, func() {
 		times2, _ := h.GetFunctionDef(zome, "testJsonFn1")
-		result, err := z.Call(times2, "{\"input\n\": 2}")
+		result, err := z.Call(&times2, "{\"input\n\": 2}")
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, `{"input":2,"output":4}`)
 	})
 	Convey("should allow a function declared with JSON parameter to be called with no parameter", t, func() {
 		emptyParametersJson, _ := h.GetFunctionDef(zome, "testJsonFn2")
-		result, err := z.Call(emptyParametersJson, "")
+		result, err := z.Call(&emptyParametersJson, "")
 		So(err, ShouldBeNil)
 		So(result, ShouldEqual, "[{\"a\":\"b\"}]")
 	})
 }
 
 func TestJSDHT(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 
 	hash, _ := NewHash("QmY8Mzg9F69e5P9AoQPYat6x5HEhc1TVGs11tmfNSzkqh2")
 	Convey("get should return hash not found if it doesn't exist", t, func() {

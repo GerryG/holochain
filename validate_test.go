@@ -8,8 +8,8 @@ import (
 )
 
 func TestValidateReceiver(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
 
 	Convey("VALIDATE_PUT_REQUEST should fail if  body isn't a ValidateQuery", t, func() {
 		m := h.node.NewMessage(VALIDATE_PUT_REQUEST, "fish")
@@ -24,7 +24,7 @@ func TestValidateReceiver(t *testing.T) {
 		So(err.Error(), ShouldEqual, "hash not found")
 	})
 	Convey("VALIDATE_PUT_REQUEST should return entry by hash", t, func() {
-		entry := GobEntry{C: "bogus entry data"}
+		entry := EntryObj{C: "bogus entry data"}
 		_, hd, err := h.NewEntry(time.Now(), "evenNumbers", &entry)
 
 		m := h.node.NewMessage(VALIDATE_PUT_REQUEST, ValidateQuery{H: hd.EntryLink})
@@ -47,7 +47,7 @@ func TestValidateReceiver(t *testing.T) {
 		So(err.Error(), ShouldEqual, "hash not found")
 	})
 
-	entry := GobEntry{C: "bogus entry data"}
+	entry := EntryObj{C: "bogus entry data"}
 	_, hd, _ := h.NewEntry(time.Now(), "evenNumbers", &entry)
 	hash := hd.EntryLink
 
@@ -59,10 +59,10 @@ func TestValidateReceiver(t *testing.T) {
 
 	Convey("VALIDATE_LINK_REQUEST should return entry by linking entry hash", t, func() {
 		someData := `{"firstName":"Zippy","lastName":"Pinhead"}`
-		e := GobEntry{C: someData}
+		e := EntryObj{C: someData}
 		_, phd, _ := h.NewEntry(time.Now(), "profile", &e)
 		profileHash := phd.EntryLink
-		e = GobEntry{C: fmt.Sprintf(`{"Links":[{"Base":"%s","Link":"%s","Tag":"4stars"}]}`, hash.String(), profileHash.String())}
+		e = EntryObj{C: fmt.Sprintf(`{"Links":[{"Base":"%s","Link":"%s","Tag":"4stars"}]}`, hash.String(), profileHash.String())}
 		_, le, _ := h.NewEntry(time.Now(), "rating", &e)
 
 		m := h.node.NewMessage(VALIDATE_LINK_REQUEST, ValidateQuery{H: le.EntryLink})

@@ -31,47 +31,52 @@ type Header struct {
 
 var DEBUG bool
 
-// newHeader makes Header object linked to a previous Header by hash
-func newHeader(h HashSpec, now time.Time, t string, entry Entry, key ic.PrivKey, prev Hash, prevType Hash) (hash Hash, header *Header, err error) {
-	var hd Header
-	hd.Type = t
-	hd.Time = now
-	hd.HeaderLink = prev
-	hd.TypeLink = prevType
+// NewHeader makes Header object linked to a previous Header by hash
+func (holo *Holochain) NewHeader(now time.Time, htype string, entry Entry, key ic.PrivKey,
+	prev Hash, prevType Hash) (hash Hash, hd_result *Header, err error) {
+	var header Header
+	header.Type = htype
+	header.Time = now
+	header.HeaderLink = prev
+	header.TypeLink = prevType
 
-	hd.EntryLink, err = entry.Sum(h)
+	header.EntryLink, err = entry.Sum(holo)
 	if err != nil {
 		return
 	}
 
 	// sign the hash of the entry
-	sig, err := key.Sign(hd.EntryLink.H)
+	sig, err := key.Sign(header.EntryLink.H)
 	if err != nil {
 		return
 	}
-	hd.Sig = Signature{S: sig}
+	header.Sig = Signature{S: sig}
 
-	hash, _, err = (&hd).Sum(h)
+	hd_result = &header
+	hash, _, err = hd_result.Sum(holo)
 	if err != nil {
 		return
 	}
 
-	header = &hd
+	hd_result = &header
 	return
 }
 
 // Sum encodes and creates a hash digest of the header
-func (hd *Header) Sum(spec HashSpec) (hash Hash, b []byte, err error) {
-	b, err = hd.Marshal()
+func (hd *Header) Sum(holo *Holochain) (hash Hash, b []byte, err error) {
+	b, err = hd.Marshal(holo)
 	if err == nil {
-		err = hash.Sum(spec, b)
+		err = hash.Sum(holo, b)
 	}
 	return
 }
 
 // Marshal writes a header to bytes
-func (hd *Header) Marshal() (b []byte, err error) {
+func (hd *Header) Marshal(holo *Holochain) (b []byte, err error) {
 	var s bytes.Buffer
+	if hd == nil {
+		Debugf("Marshal, hd nil\n")
+	}
 	err = MarshalHeader(&s, hd)
 	if err == nil {
 		b = s.Bytes()
@@ -127,14 +132,14 @@ func MarshalHeader(writer io.Writer, hd *Header) (err error) {
 }
 
 // Unmarshal reads a header from bytes
-func (hd *Header) Unmarshal(b []byte, hashSize int) (err error) {
+func (hd *Header) Unmarshal(holo *Holochain, b []byte, hashSize int) (err error) {
 	s := bytes.NewBuffer(b)
-	err = UnmarshalHeader(s, hd, hashSize)
+	err = holo.UnmarshalHeader(s, hd, hashSize)
 	return
 }
 
 // UnmarshalHeader reads a Header from a binary stream
-func UnmarshalHeader(reader io.Reader, hd *Header, hashSize int) (err error) {
+func (holo *Holochain) UnmarshalHeader(reader io.Reader, hd *Header, hashSize int) (err error) {
 	var l uint8
 	err = binary.Read(reader, binary.LittleEndian, &l)
 	if err != nil {

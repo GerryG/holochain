@@ -9,12 +9,12 @@ import (
 )
 
 func TestGob(t *testing.T) {
-	g := GobEntry{C: mkTestHeader("evenNumbers")}
+	g := EntryObj{C: mkTestHeader("evenNumbers")}
 	v, err := g.Marshal()
 	Convey("it should encode", t, func() {
 		So(err, ShouldBeNil)
 	})
-	var g2 GobEntry
+	var g2 EntryObj
 	err = g2.Unmarshal(v)
 	Convey("it should decode", t, func() {
 		sg1 := fmt.Sprintf("%v", g)
@@ -37,8 +37,8 @@ func TestJSONEntry(t *testing.T) {
 }
 
 func TestJSONSchemaValidator(t *testing.T) {
-	d, _ := setupTestService()
-	defer cleanupTestDir(d)
+	cleanup, s := setupTestService()
+	defer cleanup()
 
 	schema := `{
 	"title": "Profile Schema",
@@ -60,6 +60,9 @@ func TestJSONSchemaValidator(t *testing.T) {
 }`
 	ed := EntryDef{Schema: "schema_profile.json"}
 
+	d := s.Path
+	Debugf(" %v\n", d)
+	execCmd("ls", "-ltR", d)
 	if err := writeFile(d, ed.Schema, []byte(schema)); err != nil {
 		panic(err)
 	}
@@ -89,14 +92,15 @@ func TestJSONSchemaValidator(t *testing.T) {
 
 func TestMarshalEntry(t *testing.T) {
 
-	e := GobEntry{C: "some  data"}
+	e := EntryObj{C: "some  data"}
+	holo := Holochain{HashType: HASH_SHA}
 
 	Convey("it should round-trip", t, func() {
 		var b bytes.Buffer
-		err := MarshalEntry(&b, &e)
+		err := holo.MarshalEntry(&b, &e)
 		So(err, ShouldBeNil)
 		var ne Entry
-		ne, err = UnmarshalEntry(&b)
+		ne, err = holo.UnmarshalEntry(&b)
 		So(err, ShouldBeNil)
 		So(fmt.Sprintf("%v", ne), ShouldEqual, fmt.Sprintf("%v", &e))
 	})
