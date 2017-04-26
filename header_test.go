@@ -48,10 +48,10 @@ func TestMarshalSignature(t *testing.T) {
 	Convey("it should round-trip an empty signature", t, func() {
 		var b bytes.Buffer
 
-		err := MarshalSignature(&b, &s)
+		err := MarshalSignature(&b, &s, WIRE_GOB)
 		So(err, ShouldBeNil)
 		var ns Signature
-		err = UnmarshalSignature(&b, &ns)
+		err = UnmarshalSignature(&b, &ns, WIRE_GOB)
 		So(err, ShouldBeNil)
 		So(fmt.Sprintf("%v", ns), ShouldEqual, fmt.Sprintf("%v", s))
 	})
@@ -62,10 +62,10 @@ func TestMarshalSignature(t *testing.T) {
 		r := make([]byte, 64)
 		_, err := rand.Read(r)
 		s.S = r
-		err = MarshalSignature(&b, &s)
+		err = MarshalSignature(&b, &s, WIRE_GOB)
 		So(err, ShouldBeNil)
 		var ns Signature
-		err = UnmarshalSignature(&b, &ns)
+		err = UnmarshalSignature(&b, &ns, WIRE_GOB)
 		So(err, ShouldBeNil)
 		So(fmt.Sprintf("%v", ns), ShouldEqual, fmt.Sprintf("%v", s))
 	})

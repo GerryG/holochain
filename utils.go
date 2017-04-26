@@ -208,7 +208,7 @@ func Decode(reader io.Reader, format string, data interface{}) (err error) {
 }
 
 // ByteEncoder encodes anything using gob
-func ByteEncoder(data interface{}) (b []byte, err error) {
+func ByteEncoder(data interface{}, codingtype string) (b []byte, err error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	err = enc.Encode(data)
@@ -220,7 +220,7 @@ func ByteEncoder(data interface{}) (b []byte, err error) {
 }
 
 // ByteDecoder decodes data encoded by ByteEncoder
-func ByteDecoder(b []byte, to interface{}) (err error) {
+func ByteDecoder(b []byte, to interface{}, codingtype string) (err error) {
 	buf := bytes.NewBuffer(b)
 	dec := gob.NewDecoder(buf)
 	err = dec.Decode(to)

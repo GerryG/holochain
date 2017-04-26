@@ -55,8 +55,8 @@ type Link struct {
 
 // Entry describes serialization and deserialziation of entry data
 type Entry interface {
-	Marshal() ([]byte, error)
-	Unmarshal([]byte) error
+	Marshal(string) ([]byte, error)
+	Unmarshal([]byte, string) error
 	Content() interface{}
 	Sum(*Holochain) (Hash, error)
 }
@@ -73,7 +73,7 @@ type SchemaValidator interface {
 // MarshalEntry serializes an entry to a writer
 func (holo *Holochain) MarshalEntry(writer io.Writer, e Entry) (err error) {
 	var b []byte
-	b, err = e.Marshal()
+	b, err = e.Marshal(holo.WireType)
 	l := uint64(len(b))
 	err = binary.Write(writer, binary.LittleEndian, l)
 	if err != nil {

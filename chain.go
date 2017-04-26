@@ -68,6 +68,7 @@ func (holo *Holochain) NewChainFromFile() (err error) {
 	if fileExists(path) {
 		f, err = os.Open(path)
 		if err != nil {
+			Debugf("error opening db file %v path: %v\n", err, path)
 			return
 		}
 		var i int
@@ -116,8 +117,10 @@ func (holo *Holochain) NewChainFromFile() (err error) {
 	} else {
 		f, err = os.Create(path)
 		if err != nil {
+			Debugf("error %v path: %v\n", err, path)
 			return
 		}
+		fmt.Printf("created %v\n", path)
 	}
 	chain.s = f
 	return
@@ -341,7 +344,7 @@ func (holo *Holochain) UnmarshalChain(reader io.Reader) (err error) {
 	}
 	// decode final hash
 	var h Hash
-	err = h.UnmarshalHash(reader)
+	err = h.UnmarshalHash(reader, holo.WireType)
 	if err != nil {
 		return
 	}

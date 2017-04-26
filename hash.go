@@ -74,7 +74,8 @@ func (h *Hash) Equal(h2 *Hash) bool {
 }
 
 // MarshalHash writes a hash to a binary stream
-func (h *Hash) MarshalHash(writer io.Writer) (err error) {
+func (h *Hash) MarshalHash(writer io.Writer, coding string) (err error) {
+	// implement coding
 	if h.IsNullHash() {
 		b := make([]byte, 34)
 		err = binary.Write(writer, binary.LittleEndian, b)
@@ -89,8 +90,9 @@ func (h *Hash) MarshalHash(writer io.Writer) (err error) {
 }
 
 // UnmarshalHash reads a hash from a binary stream
-func (h *Hash) UnmarshalHash(reader io.Reader) (err error) {
+func (h *Hash) UnmarshalHash(reader io.Reader, coding string) (err error) {
 	b := make([]byte, 34)
+	Debugf("Coding in UnmarshalHash %v\n", coding)
 	err = binary.Read(reader, binary.LittleEndian, b)
 	if err == nil {
 		if b[0] == 0 {
