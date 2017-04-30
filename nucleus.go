@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-type NucleusFactory func(h *Holochain, code string) (Nucleus, error)
+type NucleusFactory func(*Holochain, *Zome) (Nucleus, error)
 
 // calling types
 const (
@@ -53,14 +53,14 @@ func RegisterNucleus(name string, factory NucleusFactory) {
 	nucleusFactories[name] = factory
 }
 
-// RegisterBultinNucleii adds the built in nucleus types to the factory hash
-func RegisterBultinNucleii() {
+// RegisterBuiltinNucleii adds the built in nucleus types to the factory hash
+func RegisterBuiltinNucleii() {
 	RegisterNucleus(ZygoNucleusType, NewZygoNucleus)
 	RegisterNucleus(JSNucleusType, NewJSNucleus)
 }
 
 // CreateNucleus returns a new Nucleus of the given type
-func CreateNucleus(h *Holochain, nucleusType string, code string) (Nucleus, error) {
+func CreateNucleus(h *Holochain, nucleusType string, zm *Zome) (nuc Nucleus, err error) {
 
 	factory, ok := nucleusFactories[nucleusType]
 	if !ok {
@@ -74,5 +74,5 @@ func CreateNucleus(h *Holochain, nucleusType string, code string) (Nucleus, erro
 		return nil, fmt.Errorf("Invalid nucleus name. Must be one of: %s", strings.Join(available, ", "))
 	}
 
-	return factory(h, code)
+	return factory(h, zm)
 }

@@ -10,7 +10,6 @@ package holochain
 import (
 	"bytes"
 	"encoding/gob"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
@@ -100,7 +99,7 @@ func Infof(m string, args ...interface{}) {
 }
 
 // Initialize function that must be called once at startup by any client app
-func Initialize(init_protocols func()) {
+func Initialize(initProtocols func()) {
 	gob.Register(Header{})
 	gob.Register(AgentEntry{})
 	gob.Register(Hash{})
@@ -121,14 +120,17 @@ func Initialize(init_protocols func()) {
 	gob.Register(LinkQueryResp{})
 	gob.Register(TaggedHash{})
 
-	RegisterBultinNucleii()
+	RegisterBuiltinNucleii()
 
 	infoLog.New(nil)
 	debugLog.New(nil)
 
 	rand.Seed(time.Now().Unix()) // initialize global pseudo random generator
 
-	init_protocols()
+	if initProtocols == nil {
+		initProtocols = InitializeProtocols
+	}
+	initProtocols()
 }
 
 func InitializeProtocols() {
@@ -726,6 +728,7 @@ func (h *Holochain) GenDNAHashes() (err error) {
 			return
 		}
 		for i, e := range z.Entries {
+			Debugf("adding entries %v, %v", i, e.Name)
 			sc := e.Schema
 			if sc != "" {
 				b, err = readFile(zpath, sc)
@@ -736,6 +739,7 @@ func (h *Holochain) GenDNAHashes() (err error) {
 				if err != nil {
 					return
 				}
+				Debugf("got entry, add %v, %v", i, e.Name)
 				z.Entries[i] = e
 			}
 		}
@@ -808,6 +812,7 @@ func (h *Holochain) Validate(entriesToo bool) (valid bool, err error) {
 // @TODO this makes the incorrect assumption that entry type strings are unique across zomes
 func (h *Holochain) GetEntryDef(t string) (zome *Zome, d *EntryDef, err error) {
 	for _, z := range h.Zomes {
+		Debugf("looking up zome %s", z.Name)
 		d, err = z.GetEntryDef(t)
 		if err == nil {
 			zome = &z
@@ -853,7 +858,7 @@ func (h *Holochain) makeNucleus(z *Zome) (n Nucleus, err error) {
 		}
 		z.code = string(code)
 	}
-	n, err = CreateNucleus(h, z.NucleusType, z.code)
+	n, err = CreateNucleus(h, z.NucleusType, z)
 	return
 }
 
@@ -884,6 +889,10 @@ func (h *Holochain) GetZome(zName string) (z *Zome, err error) {
 
 // GetEntryDef returns the entry def structure
 func (z *Zome) GetEntryDef(entryName string) (e *EntryDef, err error) {
+	if z == nil {
+		Debug("nil entries")
+	}
+	Debugf("GetEntryDef %s %v", entryName, len(z.Entries))
 	for _, def := range z.Entries {
 		if def.Name == entryName {
 			e = &def

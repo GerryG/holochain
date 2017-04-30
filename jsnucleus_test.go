@@ -8,24 +8,27 @@ import (
 )
 
 func TestNewJSNucleus(t *testing.T) {
+	tzm := Zome{code: `1 + 1`}
 	Convey("new should create a nucleus", t, func() {
-		v, err := NewJSNucleus(nil, `1 + 1`)
+		v, err := NewJSNucleus(nil, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*JSNucleus)
 		i, _ := z.lastResult.ToInteger()
 		So(i, ShouldEqual, 2)
 	})
 	Convey("new fail to create nucleus when code is bad", t, func() {
-		v, err := NewJSNucleus(nil, "1+ )")
+		tzm.code = "1+ )"
+		v, err := NewJSNucleus(nil, &tzm)
 		So(v, ShouldBeNil)
 		So(err.Error(), ShouldEqual, "JS exec error: (anonymous): Line 1:25 Unexpected token )")
 	})
 
+	tzm.code = ""
 	Convey("it should have an App structure:", t, func() {
 		d, _, h := prepareTestChain("test")
 		defer cleanupTestDir(d)
 
-		v, err := NewJSNucleus(h, "")
+		v, err := NewJSNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*JSNucleus)
 
@@ -60,7 +63,7 @@ func TestNewJSNucleus(t *testing.T) {
 		d, _, h := prepareTestChain("test")
 		defer cleanupTestDir(d)
 
-		v, err := NewJSNucleus(h, "")
+		v, err := NewJSNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*JSNucleus)
 
@@ -74,7 +77,7 @@ func TestNewJSNucleus(t *testing.T) {
 		d, _, h := prepareTestChain("test")
 		defer cleanupTestDir(d)
 
-		v, err := NewJSNucleus(h, "")
+		v, err := NewJSNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*JSNucleus)
 
@@ -94,13 +97,15 @@ func TestNewJSNucleus(t *testing.T) {
 }
 
 func TestJSGenesis(t *testing.T) {
+	tzm := Zome{code: `function genesis() {return false}`}
 	Convey("it should fail if the init function returns false", t, func() {
-		z, _ := NewJSNucleus(nil, `function genesis() {return false}`)
+		z, _ := NewJSNucleus(nil, &tzm)
 		err := z.ChainGenesis()
 		So(err.Error(), ShouldEqual, "genesis failed")
 	})
 	Convey("it should work if the genesis function returns true", t, func() {
-		z, _ := NewJSNucleus(nil, `function genesis() {return true}`)
+		tzm.code = `function genesis() {return true}`
+		z, _ := NewJSNucleus(nil, &tzm)
 		err := z.ChainGenesis()
 		So(err, ShouldBeNil)
 	})
@@ -115,7 +120,7 @@ func TestJSbuildValidate(t *testing.T) {
 	d := EntryDef{Name: "evenNumbers", DataFormat: DataFormatString}
 
 	Convey("it should build commit", t, func() {
-		code, err := buildJSValidateAction(a, d.Name, []string{"fake_src_hash"})
+		code, err := buildJSValidateAction(a, &d, []string{"fake_src_hash"})
 		So(err, ShouldBeNil)
 		So(code, ShouldEqual, `validateCommit("evenNumbers","2",{"EntryLink":"","Type":"","Time":"0001-01-01T00:00:00Z"},["fake_src_hash"])`)
 	})
@@ -127,9 +132,10 @@ func TestJSValidateCommit(t *testing.T) {
 	h.Zomes = []Zome{}
 	h.config.Loggers.App.New(nil)
 	hdr := mkTestHeader("evenNumbers")
+	tzm := Zome{code: `function validateCommit(name,entry,header,sources) {debug(name);debug(entry);debug(JSON.stringify(header));debug(JSON.stringify(sources));return true};`}
 
 	Convey("it should be passing in the correct values", t, func() {
-		v, err := NewJSNucleus(&h, `function validateCommit(name,entry,header,sources) {debug(name);debug(entry);debug(JSON.stringify(header));debug(JSON.stringify(sources));return true};`)
+		z, err := NewJSNucleus(&h, &tzm)
 		So(err, ShouldBeNil)
 		d := EntryDef{Name: "evenNumbers", DataFormat: DataFormatString}
 		ShouldLog(&h.config.Loggers.App, `evenNumbers
@@ -139,12 +145,13 @@ foo
 `, func() {
 			a := NewCommitAction("oddNumbers", &GobEntry{C: "foo"})
 			a.header = &hdr
-			err = v.ValidateAction(a, d.Name, []string{"fakehashvalue"})
+			err = z.ValidateAction(a, d.Name, []string{"fakehashvalue"})
 			So(err, ShouldBeNil)
 		})
 	})
 	Convey("should run an entry value against the defined validator for string data", t, func() {
-		v, err := NewJSNucleus(nil, `function validateCommit(name,entry,header,sources) { return (entry=="fish")};`)
+		tzm.code = `function validateCommit(name,entry,header,sources) { return (entry=="fish")};`
+		v, err := NewJSNucleus(nil, &tzm)
 		So(err, ShouldBeNil)
 		d := EntryDef{Name: "oddNumbers", DataFormat: DataFormatString}
 
@@ -159,7 +166,8 @@ foo
 		So(err, ShouldBeNil)
 	})
 	Convey("should run an entry value against the defined validator for js data", t, func() {
-		v, err := NewJSNucleus(nil, `function validateCommit(name,entry,header,sources) { return (entry=="fish")};`)
+		tzm.code = `function validateCommit(name,entry,header,sources) { return (entry=="fish")};`
+		v, err := NewJSNucleus(nil, &tzm)
 		d := EntryDef{Name: "evenNumbers", DataFormat: DataFormatRawJS}
 
 		a := NewCommitAction("oddNumbers", &GobEntry{C: "\"cow\""})
@@ -173,7 +181,8 @@ foo
 		So(err, ShouldBeNil)
 	})
 	Convey("should run an entry value against the defined validator for json data", t, func() {
-		v, err := NewJSNucleus(nil, `function validateCommit(name,entry,header,sources) { return (entry.data=="fish")};`)
+		tzm.code = `function validateCommit(name,entry,header,sources) { return (entry.data=="fish")};`
+		v, err := NewJSNucleus(nil, &tzm)
 		d := EntryDef{Name: "evenNumbers", DataFormat: DataFormatJSON}
 
 		a := NewCommitAction("evenNumbers", &GobEntry{C: `{"data":"cow"}`})
@@ -284,10 +293,12 @@ func TestJSExposeCall(t *testing.T) {
 func TestJSDHT(t *testing.T) {
 	d, _, h := prepareTestChain("test")
 	defer cleanupTestDir(d)
+	tzm := Zome{}
 
 	hash, _ := NewHash("QmY8Mzg9F69e5P9AoQPYat6x5HEhc1TVGs11tmfNSzkqh2")
 	Convey("get should return hash not found if it doesn't exist", t, func() {
-		v, err := NewJSNucleus(h, fmt.Sprintf(`get("%s");`, hash.String()))
+		tzm.code = fmt.Sprintf(`get("%s");`, hash.String())
+		v, err := NewJSNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*JSNucleus)
 		So(z.lastResult.String(), ShouldEqual, "HolochainError: hash not found")
@@ -301,7 +312,8 @@ func TestJSDHT(t *testing.T) {
 	}
 
 	Convey("get should return entry", t, func() {
-		v, err := NewJSNucleus(h, fmt.Sprintf(`get("%s");`, hash.String()))
+		tzm.code = fmt.Sprintf(`get("%s");`, hash.String())
+		v, err := NewJSNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*JSNucleus)
 		x, err := z.lastResult.Export()
@@ -317,8 +329,10 @@ func TestJSDHT(t *testing.T) {
 		panic(err)
 	}
 
-	Convey("getLink function should return the Links", t, func() {
-		v, err := NewJSNucleus(h, fmt.Sprintf(`getLink("%s","4stars");`, hash.String()))
+	Convey("getlink function should return the Links", t, func() {
+		tzm.code = fmt.Sprintf(`getlink("%s","4stars");`, hash.String())
+		v, err := NewJSNucleus(h, &tzm)
+
 		So(err, ShouldBeNil)
 		z := v.(*JSNucleus)
 		So(z.lastResult.Class(), ShouldEqual, "Object")
@@ -328,8 +342,9 @@ func TestJSDHT(t *testing.T) {
 		So(fmt.Sprintf("%v", lqr.Links[0].H), ShouldEqual, profileHash.String())
 	})
 
-	Convey("getLink function with load option should return the Links and entries", t, func() {
-		v, err := NewJSNucleus(h, fmt.Sprintf(`getLink("%s","4stars",{Load:true});`, hash.String()))
+	Convey("getlink function with load option should return the Links and entries", t, func() {
+		tzm.code = fmt.Sprintf(`getlink("%s","4stars",{Load:true});`, hash.String())
+		v, err := NewJSNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*JSNucleus)
 		So(z.lastResult.Class(), ShouldEqual, "Object")

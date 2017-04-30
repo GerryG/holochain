@@ -9,14 +9,16 @@ import (
 )
 
 func TestNewZygoNucleus(t *testing.T) {
+	tzm := Zome{code: `(+ 1 1)`}
 	Convey("new should create a nucleus", t, func() {
-		v, err := NewZygoNucleus(nil, `(+ 1 1)`)
+		v, err := NewZygoNucleus(nil, &tzm)
 		z := v.(*ZygoNucleus)
 		So(err, ShouldBeNil)
 		So(z.lastResult.(*zygo.SexpInt).Val, ShouldEqual, 2)
 	})
 	Convey("new fail to create nucleus when code is bad", t, func() {
-		v, err := NewZygoNucleus(nil, "(should make a zygo syntax error")
+		tzm.code = "(should make a zygo syntax error"
+		v, err := NewZygoNucleus(nil, &tzm)
 		So(v, ShouldBeNil)
 		So(err.Error(), ShouldEqual, "Zygomys load error: Error on line 1: parser needs more input\n")
 	})
@@ -25,7 +27,8 @@ func TestNewZygoNucleus(t *testing.T) {
 		d, _, h := prepareTestChain("test")
 		defer cleanupTestDir(d)
 
-		v, err := NewZygoNucleus(h, "")
+		tzm.code = ""
+		v, err := NewZygoNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*ZygoNucleus)
 
@@ -57,7 +60,7 @@ func TestNewZygoNucleus(t *testing.T) {
 		d, _, h := prepareTestChain("test")
 		defer cleanupTestDir(d)
 
-		v, err := NewZygoNucleus(h, "")
+		v, err := NewZygoNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*ZygoNucleus)
 
@@ -71,7 +74,7 @@ func TestNewZygoNucleus(t *testing.T) {
 		d, _, h := prepareTestChain("test")
 		defer cleanupTestDir(d)
 
-		v, err := NewZygoNucleus(h, "")
+		v, err := NewZygoNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*ZygoNucleus)
 
@@ -107,13 +110,15 @@ func TestNewZygoNucleus(t *testing.T) {
 }
 
 func TestZygoGenesis(t *testing.T) {
+	tzm := Zome{code: `(defn genesis [] false)`}
 	Convey("it should fail if the genesis function returns false", t, func() {
-		z, _ := NewZygoNucleus(nil, `(defn genesis [] false)`)
+		z, _ := NewZygoNucleus(nil, &tzm)
 		err := z.ChainGenesis()
 		So(err.Error(), ShouldEqual, "genesis failed")
 	})
 	Convey("it should work if the genesis function returns true", t, func() {
-		z, _ := NewZygoNucleus(nil, `(defn genesis [] true)`)
+		tzm.code = `(defn genesis [] true)`
+		z, _ := NewZygoNucleus(nil, &tzm)
 		err := z.ChainGenesis()
 		So(err, ShouldBeNil)
 	})
@@ -128,7 +133,7 @@ func TestZybuildValidate(t *testing.T) {
 	d := EntryDef{Name: "oddNumbers", DataFormat: DataFormatString}
 
 	Convey("it should build commit", t, func() {
-		code, err := buildZyValidateAction(a, d.Name, []string{"fake_src_hash"})
+		code, err := buildZyValidateAction(a, &d, []string{"fake_src_hash"})
 		So(err, ShouldBeNil)
 		So(code, ShouldEqual, `(validateCommit "oddNumbers" "3" (hash EntryLink:"" Type:"" Time:"0001-01-01T00:00:00Z") (unjson (raw "[\"fake_src_hash\"]")))`)
 	})
@@ -140,9 +145,10 @@ func TestZyValidateCommit(t *testing.T) {
 	h.Zomes = []Zome{}
 	h.config.Loggers.App.New(nil)
 	hdr := mkTestHeader("evenNumbers")
+	tzm := Zome{code: `(defn validateCommit [name entry header sources] (debug name) (debug entry) (debug header) (debug sources) true)`}
 
 	Convey("it should be passing in the correct values", t, func() {
-		v, err := NewZygoNucleus(&h, `(defn validateCommit [name entry header sources] (debug name) (debug entry) (debug header) (debug sources) true)`)
+		v, err := NewZygoNucleus(&h, &tzm)
 		So(err, ShouldBeNil)
 		d := EntryDef{Name: "evenNumbers", DataFormat: DataFormatString}
 		ShouldLog(&h.config.Loggers.App, `evenNumbers
@@ -157,7 +163,8 @@ foo
 		})
 	})
 	Convey("should run an entry value against the defined validator for string data", t, func() {
-		v, err := NewZygoNucleus(nil, `(defn validateCommit [name entry header sources] (cond (== entry "fish") true false))`)
+		tzm.code = `(defn validateCommit [name entry header sources] (cond (== entry "fish") true false))`
+		v, err := NewZygoNucleus(nil, &tzm)
 		So(err, ShouldBeNil)
 		d := EntryDef{Name: "oddNumbers", DataFormat: DataFormatString}
 
@@ -172,7 +179,8 @@ foo
 		So(err, ShouldBeNil)
 	})
 	Convey("should run an entry value against the defined validator for zygo data", t, func() {
-		v, err := NewZygoNucleus(nil, `(defn validateCommit [name entry header sources] (cond (== entry "fish") true false))`)
+		tzm.code = `(defn validateCommit [name entry header sources] (cond (== entry "fish") true false))`
+		v, err := NewZygoNucleus(nil, &tzm)
 		d := EntryDef{Name: "evenNumbers", DataFormat: DataFormatRawZygo}
 
 		a := NewCommitAction("oddNumbers", &GobEntry{C: "\"cow\""})
@@ -186,7 +194,8 @@ foo
 		So(err, ShouldBeNil)
 	})
 	Convey("should run an entry value against the defined validator for json data", t, func() {
-		v, err := NewZygoNucleus(nil, `(defn validateCommit [name entry header sources] (cond (== (hget entry data:) "fish") true false))`)
+		tzm.code = `(defn validateCommit [name entry header sources] (cond (== (hget entry data:) "fish") true false))`
+		v, err := NewZygoNucleus(nil, &tzm)
 		d := EntryDef{Name: "evenNumbers", DataFormat: DataFormatJSON}
 
 		a := NewCommitAction("evenNumbers", &GobEntry{C: `{"data":"cow"}`})
@@ -286,10 +295,12 @@ func TestZygoExposeCall(t *testing.T) {
 func TestZygoDHT(t *testing.T) {
 	d, _, h := prepareTestChain("test")
 	defer cleanupTestDir(d)
+	tzm := Zome{}
 
 	hash, _ := NewHash("QmY8Mzg9F69e5P9AoQPYat6x5HEhc1TVGs11tmfNSzkqh2")
 	Convey("get should return hash not found if it doesn't exist", t, func() {
-		v, err := NewZygoNucleus(h, fmt.Sprintf(`(get "%s")`, hash.String()))
+		tzm.code = fmt.Sprintf(`(get "%s")`, hash.String())
+		v, err := NewZygoNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*ZygoNucleus)
 		r, err := z.lastResult.(*zygo.SexpHash).HashGet(z.env, z.env.MakeSymbol("error"))
@@ -304,7 +315,8 @@ func TestZygoDHT(t *testing.T) {
 	}
 
 	Convey("get should return entry", t, func() {
-		v, err := NewZygoNucleus(h, fmt.Sprintf(`(get "%s")`, hash.String()))
+		tzm.code = fmt.Sprintf(`(get "%s")`, hash.String())
+		v, err := NewZygoNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*ZygoNucleus)
 		r, err := z.lastResult.(*zygo.SexpHash).HashGet(z.env, z.env.MakeSymbol("result"))
@@ -320,8 +332,9 @@ func TestZygoDHT(t *testing.T) {
 		panic(err)
 	}
 
-	Convey("getLink function should return the Links", t, func() {
-		v, err := NewZygoNucleus(h, fmt.Sprintf(`(getLink "%s" "4stars")`, hash.String()))
+	Convey("getlink function should return the Links", t, func() {
+		tzm.code = fmt.Sprintf(`(getlink "%s" "4stars")`, hash.String())
+		v, err := NewZygoNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*ZygoNucleus)
 		sh := z.lastResult.(*zygo.SexpHash)
@@ -330,8 +343,9 @@ func TestZygoDHT(t *testing.T) {
 		So(err, ShouldBeNil)
 		So(r.(*zygo.SexpStr).S, ShouldEqual, `[{"H":"QmYeinX5vhuA91D3v24YbgyLofw9QAxY6PoATrBHnRwbtt","E":""}]`)
 	})
-	Convey("getLink function with load option should return the Links and entries", t, func() {
-		v, err := NewZygoNucleus(h, fmt.Sprintf(`(getLink "%s" "4stars" (hash Load:true))`, hash.String()))
+	Convey("getlink function with load option should return the Links and entries", t, func() {
+		tzm.code = fmt.Sprintf(`(getlink "%s" "4stars" (hash Load:true))`, hash.String())
+		v, err := NewZygoNucleus(h, &tzm)
 		So(err, ShouldBeNil)
 		z := v.(*ZygoNucleus)
 		sh := z.lastResult.(*zygo.SexpHash)

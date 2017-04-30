@@ -14,7 +14,8 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	Initialize()
+	Crash = true
+	Initialize(nil)
 	os.Exit(m.Run())
 }
 

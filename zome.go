@@ -59,6 +59,7 @@ func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
 		}
 		for i, e := range z.Entries {
 			sc := e.Schema
+			Debugf("PrepZms, schema %v, %v", i, e.Name)
 			if sc != "" {
 				if !fileExists(zpath + "/" + sc) {
 					err = errors.New("DNA specified schema file missing: " + sc)
@@ -68,6 +69,7 @@ func (h *Holochain) PrepareZomes(zomes []Zome) (err error) {
 					if err = e.BuildJSONSchemaValidator(zpath); err != nil {
 						return
 					}
+					Debugf("PrepZms, store %v, %v", i, e.Name)
 					z.Entries[i] = e
 				}
 			}

@@ -22,6 +22,7 @@ const (
 type JSNucleus struct {
 	vm         *otto.Otto
 	lastResult *otto.Value
+	zm         *Zome
 }
 
 // Type returns the string value under which this nucleus is registered
@@ -51,8 +52,7 @@ func (z *JSNucleus) ChainGenesis() (err error) {
 	return
 }
 
-func prepareJSEntryArgs(entryType string, entry Entry, header *Header) (args string, err error) {
-	def := h.GetEntryDef(entryType)
+func prepareJSEntryArgs(def *EntryDef, entry Entry, header *Header) (args string, err error) {
 	entryStr := entry.Content().(string)
 	switch def.DataFormat {
 	case DataFormatRawJS:
@@ -78,9 +78,8 @@ func prepareJSEntryArgs(entryType string, entry Entry, header *Header) (args str
 	return
 }
 
-func prepareJSValidateArgs(action Action, entryType string) (args string, err error) {
+func prepareJSValidateArgs(action Action, def *EntryDef) (args string, err error) {
 	switch t := action.(type) {
-	def := h.GetEntryDef(entryType)
 	case *ActionPut:
 		args, err = prepareJSEntryArgs(def, t.entry, t.header)
 	case *ActionCommit:
@@ -101,15 +100,15 @@ func prepareJSValidateArgs(action Action, entryType string) (args string, err er
 	return
 }
 
-func buildJSValidateAction(action Action, entryType string, sources []string) (code string, err error) {
+func buildJSValidateAction(action Action, def *EntryDef, sources []string) (code string, err error) {
 	fnName := "validate" + strings.Title(action.Name())
 	var args string
-	args, err = prepareJSValidateArgs(action, entryType)
+	args, err = prepareJSValidateArgs(action, def)
 	if err != nil {
 		return
 	}
 	srcs := mkJSSources(sources)
-	code = fmt.Sprintf(`%s("%s",%s,%s)`, fnName, entryType, args, srcs)
+	code = fmt.Sprintf(`%s("%s",%s,%s)`, fnName, def.Name, args, srcs)
 
 	return
 }
@@ -117,7 +116,11 @@ func buildJSValidateAction(action Action, entryType string, sources []string) (c
 // ValidateAction builds the correct validation function based on the action an calls it
 func (z *JSNucleus) ValidateAction(action Action, entryType string, sources []string) (err error) {
 	var code string
-	code, err = buildJSValidateAction(action, entryType, sources)
+	def, err := z.zm.GetEntryDef(entryType)
+	if err != nil {
+		return
+	}
+	code, err = buildJSValidateAction(action, def, sources)
 	if err != nil {
 		return
 	}
@@ -174,9 +177,9 @@ func (z *JSNucleus) runValidate(fnName string, code string) (err error) {
 	return
 }
 
-func (z *JSNucleus) validateEntry(fnName string, entryType string, entry Entry, header *Header, sources []string) (err error) {
+func (z *JSNucleus) validateEntry(fnName string, def *EntryDef, entry Entry, header *Header, sources []string) (err error) {
 
-	e, srcs, err := z.prepareJSValidateEntryArgs(entryType, entry, sources)
+	e, srcs, err := z.prepareJSValidateEntryArgs(def, entry, sources)
 	if err != nil {
 		return
 	}
@@ -188,7 +191,7 @@ func (z *JSNucleus) validateEntry(fnName string, entryType string, entry Entry, 
 		header.Time.UTC().Format(time.RFC3339),
 	)
 
-	code := fmt.Sprintf(`%s("%s",%s,%s,%s)`, fnName, entryType, e, hdr, srcs)
+	code := fmt.Sprintf(`%s("%s",%s,%s,%s)`, fnName, def.Name, e, hdr, srcs)
 	Debugf("%s: %s", fnName, code)
 	err = z.runValidate(fnName, code)
 	if err != nil && err == ValidationFailedErr {
@@ -246,9 +249,10 @@ func (z *JSNucleus) Call(fn *FunctionDef, params interface{}) (result interface{
 }
 
 // NewJSNucleus builds a javascript execution environment with user specified code
-func NewJSNucleus(h *Holochain, code string) (n Nucleus, err error) {
+func NewJSNucleus(h *Holochain, zm *Zome) (n Nucleus, err error) {
 	var z JSNucleus
 	z.vm = otto.New()
+	z.zm = zm
 
 	err = z.vm.Set("property", func(call otto.FunctionCall) otto.Value {
 		prop, _ := call.Argument(0).ToString()
@@ -442,7 +446,7 @@ func NewJSNucleus(h *Holochain, code string) (n Nucleus, err error) {
 	if h != nil {
 		l += fmt.Sprintf(`var App = {Name:"%s",DNA:{Hash:"%s"},Agent:{Hash:"%s",String:"%s"},Key:{Hash:"%s"}};`, h.Name, h.dnaHash, h.agentHash, h.Agent().Name(), peer.IDB58Encode(h.id))
 	}
-	_, err = z.Run(l + code)
+	_, err = z.Run(l + zm.code)
 	if err != nil {
 		return
 	}

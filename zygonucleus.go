@@ -25,6 +25,7 @@ type ZygoNucleus struct {
 	env        *zygo.Glisp
 	lastResult zygo.Sexp
 	library    string
+	zm         *Zome
 }
 
 // Type returns the string value under which this nucleus is registered
@@ -58,7 +59,7 @@ func (z *ZygoNucleus) ChainGenesis() (err error) {
 
 }
 
-func prepareZyEntryArgs(entryType string, entry Entry, header *Header) (args string, err error) {
+func prepareZyEntryArgs(def *EntryDef, entry Entry, header *Header) (args string, err error) {
 	entryStr := entry.Content().(string)
 	switch def.DataFormat {
 	case DataFormatRawZygo:
@@ -90,8 +91,7 @@ func prepareZyEntryArgs(entryType string, entry Entry, header *Header) (args str
 	return
 }
 
-func prepareZyValidateArgs(action Action, entryType string) (args string, err error) {
-	def := h.GetEntryDef(entryType)
+func prepareZyValidateArgs(action Action, def *EntryDef) (args string, err error) {
 	switch t := action.(type) {
 	case *ActionCommit:
 		args, err = prepareZyEntryArgs(def, t.entry, t.header)
@@ -112,15 +112,15 @@ func prepareZyValidateArgs(action Action, entryType string) (args string, err er
 	return
 }
 
-func buildZyValidateAction(action Action, entryType string, sources []string) (code string, err error) {
+func buildZyValidateAction(action Action, def *EntryDef, sources []string) (code string, err error) {
 	fnName := "validate" + strings.Title(action.Name())
 	var args string
-	args, err = prepareZyValidateArgs(action, entryType)
+	args, err = prepareZyValidateArgs(action, def)
 	if err != nil {
 		return
 	}
 	srcs := mkZySources(sources)
-	code = fmt.Sprintf(`(%s "%s" %s %s)`, fnName, entryType, args, srcs)
+	code = fmt.Sprintf(`(%s "%s" %s %s)`, fnName, def.Name, args, srcs)
 
 	return
 }
@@ -128,7 +128,14 @@ func buildZyValidateAction(action Action, entryType string, sources []string) (c
 // ValidateAction builds the correct validation function based on the action an calls it
 func (z *ZygoNucleus) ValidateAction(action Action, entryType string, sources []string) (err error) {
 	var code string
-	code, err = buildZyValidateAction(action, entryType, sources)
+	if z.zm == nil {
+		Panix("No zome on nuc")
+	}
+	def, err := z.zm.GetEntryDef(entryType)
+	if err != nil {
+		return
+	}
+	code, err = buildZyValidateAction(action, def, sources)
 	if err != nil {
 		return
 	}
@@ -148,8 +155,7 @@ func mkZySources(sources []string) (srcs string) {
 	return
 }
 
-func (z *ZygoNucleus) prepareValidateArgs(entryType string, entry Entry, sources []string) (e string, srcs string, err error) {
-	def := h.GetEntryDef(entryType)
+func (z *ZygoNucleus) prepareValidateArgs(def *EntryDef, entry Entry, sources []string) (e string, srcs string, err error) {
 	c := entry.Content().(string)
 	// @todo handle JSON if schema type is different
 	switch def.DataFormat {
@@ -194,8 +200,8 @@ func (z *ZygoNucleus) runValidate(fnName string, code string) (err error) {
 	return
 }
 
-func (z *ZygoNucleus) validateEntry(fnName string, entryType string, entry Entry, header *Header, sources []string) (err error) {
-	e, srcs, err := z.prepareValidateArgs(entryType, entry, sources)
+func (z *ZygoNucleus) validateEntry(fnName string, def *EntryDef, entry Entry, header *Header, sources []string) (err error) {
+	e, srcs, err := z.prepareValidateArgs(def, entry, sources)
 	if err != nil {
 		return
 	}
@@ -212,7 +218,7 @@ func (z *ZygoNucleus) validateEntry(fnName string, entryType string, entry Entry
 		hdr = `""`
 	}
 
-	code := fmt.Sprintf(`(%s "%s" %s %s %s)`, fnName, entryType, e, hdr, srcs)
+	code := fmt.Sprintf(`(%s "%s" %s %s %s)`, fnName, def.Name, e, hdr, srcs)
 	Debugf("%s: %s", fnName, code)
 
 	err = z.runValidate(fnName, code)
@@ -388,7 +394,7 @@ func (z *ZygoNucleus) getLink(env *zygo.Glisp, h *Holochain, basestr string, tag
 }
 
 // NewZygoNucleus builds an zygo execution environment with user specified code
-func NewZygoNucleus(h *Holochain, code string) (n Nucleus, err error) {
+func NewZygoNucleus(h *Holochain, zm *Zome) (n Nucleus, err error) {
 	var z ZygoNucleus
 	z.env = zygo.NewGlispSandbox()
 	z.env.AddFunction("version",
@@ -620,7 +626,7 @@ func NewZygoNucleus(h *Holochain, code string) (n Nucleus, err error) {
 	}
 	z.library = l
 
-	_, err = z.Run(l + code)
+	_, err = z.Run(l + zm.code)
 	if err != nil {
 		return
 	}

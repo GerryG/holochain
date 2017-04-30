@@ -37,6 +37,7 @@ func prepareSources(sources []peer.ID) (srcs []string) {
 func (h *Holochain) ValidateAction(action Action, entryType string, sources []peer.ID) (def *EntryDef, err error) {
 	var z *Zome
 	z, def, err = h.GetEntryDef(entryType)
+	Debugf("VA def: %v (%v)", def, err)
 	if err != nil {
 		return
 	}
@@ -55,6 +56,7 @@ func (h *Holochain) ValidateAction(action Action, entryType string, sources []pe
 		return
 	}
 
+	Debugf("Caling VAct %v %s", action, entryType)
 	err = n.ValidateAction(action, entryType, prepareSources(sources))
 	if err != nil {
 		Debugf("Nucleus ValidateAction(%T) err:%v\n", action, err)
@@ -162,6 +164,7 @@ type ActionCommit struct {
 
 func NewCommitAction(entryType string, entry Entry) *ActionCommit {
 	a := ActionCommit{entryType: entryType, entry: entry}
+	Debugf("New action %s, %v, %v", entryType, &entry, a)
 	return &a
 }
 

@@ -36,6 +36,7 @@ func setupTestService() (d string, s *Service) {
 func setupTestChain(n string) (d string, s *Service, h *Holochain) {
 	d, s = setupTestService()
 	path := s.Path + "/" + n
+	Debugf("setupTestService %v, %v, %s", d, s, path)
 	h, err := s.GenDev(path, "toml")
 	if err != nil {
 		panic(err)
@@ -45,7 +46,9 @@ func setupTestChain(n string) (d string, s *Service, h *Holochain) {
 
 func prepareTestChain(n string) (d string, s *Service, h *Holochain) {
 	d, s, h = setupTestChain("test")
+	Debugf("prepareTestChain %v, %v, %v", d, s, h)
 	_, err := h.GenChain()
+	Debugf("pTC GC %v", err)
 	if err != nil {
 		panic(err)
 	}
