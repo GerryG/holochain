@@ -43,7 +43,15 @@ type EntryDef struct {
 type FunctionDef struct {
 	Name        string
 	CallingType string
+
 	fn          *GoFunc
+	Entries     map[string]EntryDef
+	NucleusType string
+	Functions   map[string]FunctionDef
+
+	// cache for code and nucleus
+	code string
+	nuc  *Nucleus
 }
 
 // EntryDef struct holds an entry definition
@@ -202,6 +210,14 @@ func (holo *Holochain) NewNucleus(zome *Zome) (nuc *Nucleus, err error) {
 			nuc = &nucObj
 		} else {
 			err = fmt.Errorf("In '%s' zome: %s", zname, err.Error())
+
+func (zome *Zome) GetNucleus(chain *Holochain) (err error) {
+	var n Nucleus
+	n, err = chain.makeNucleus(zome)
+	if err == nil {
+		err = n.ChainGenesis()
+		if err != nil {
+			err = fmt.Errorf("In '%s' zome: %s", zome.Name, err.Error())
 		}
 	}
 	return
@@ -243,7 +259,6 @@ func (zome *Zome) GenZomeDNA(holo *Holochain) (err error) {
 	}
 	for name, entry := range zome.Entries {
 		schema := entry.Schema
-		Debugf("p schema %v %v", name, schema)
 		if schema != "" {
 			bytes, err = readFile(zpath, schema)
 			if err != nil {

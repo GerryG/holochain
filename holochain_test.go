@@ -339,21 +339,18 @@ func TestGenChain(t *testing.T) {
 		var sh Hash
 		sh.Sum(holo, b)
 
+		So(z2.Entries["entryTypeFoo"].SchemaHash.String(), ShouldEqual, sh.String())
+	})
+
 		Debugf("D:%v", z2.Entries)
 		So(z1.Entries["entryTypeFoo"].SchemaHash.String(), ShouldEqual, sh.String())
 		So(z2.Entries["entryTypeFoo"].SchemaHash.String(), ShouldEqual, sh.String())
 	})
-
-	/*
-		Convey("before GenChain call DNAHash call should fail", t, func() {
-			h := holo.DNAHash()
-			So(h.String(), ShouldEqual, "")
-		})
-		var headerHash Hash
-		Convey("GenChain call works", t, func() {
-			headerHash, err = holo.GenChain()
-			So(err, ShouldBeNil)
-		})
+	var headerHash Hash
+	Convey("GenChain call works", t, func() {
+		headerHash, err = h.GenChain()
+		So(err, ShouldBeNil)
+	})
 
 		var header Header
 		Convey("top link should be Key entry", t, func() {

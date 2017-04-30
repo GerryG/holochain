@@ -18,7 +18,6 @@ import (
 func (s *Service) GenDev(root string, format string) (hP *Holochain, err error) {
 	hP, err = gen(root, func(root string) (hP *Holochain, err error) {
 		agent, err := LoadAgent(filepath.Dir(root))
-		Debugf("Got agent[%v], %v (%v)", err, agent, root)
 		if err != nil {
 			return
 		}
@@ -111,9 +110,8 @@ function genesis() {return true}
 			return nil, err
 		}
 
-		for name, z := range h.Zomes {
+		for _, z := range h.Zomes {
 
-			Debugf("Process Z: %v, %v", name, z)
 			zpath := h.ZomePath(&z)
 
 			if err = os.MkdirAll(zpath, os.ModePerm); err != nil {
@@ -121,11 +119,9 @@ function genesis() {return true}
 			}
 
 			c, _ := code[z.Name]
-			Debugf("write code %v %v, C:%v", name, z.Name, c)
 			if err = writeFile(zpath, z.Code, []byte(c)); err != nil {
 				return
 			}
-			execCmd("ls", "-ltR", zpath+"/..")
 
 			// both zomes have the same profile schma, this will be generalized for
 			// scaffold building code.

@@ -29,6 +29,17 @@ const Version int = 7
 const VersionStr string = "7"
 const HASH_SHA = "sha2-256"
 
+// Loggers holds the logging structures for the different parts of the system
+type Loggers struct {
+	App        Logger
+	DHT        Logger
+	Gossip     Logger
+	TestPassed Logger
+	TestFailed Logger
+	TestInfo   Logger
+}
+>>>>>>> a7bd470b042f43ecaca1d9dd0e5a9054efdd1ed9
+
 // Config holds the non-DNA configuration for a holo-chain
 // Move to dna or dht connected file?
 type Config struct {
@@ -48,7 +59,7 @@ type Holochain struct {
 	PropertiesSchema string
 	HashType         string
 	BasedOn          Hash // holochain hash for base schemas and code
-	Zomes            []Zome
+	Zomes            map[string]Zome
 	RequiresVersion  int
 	//---- private values not serialized; initialized on Load
 	nuclei         map[string]*Nucleus     // Cache instantiated nuclei by zome name
@@ -91,6 +102,7 @@ func Initialize(initProtocols func()) {
 	gob.Register(LinkQueryResp{})
 	gob.Register(TaggedHash{})
 
+	Info("init gobs2")
 	RegisterBultinNucleii()
 
 	rand.Seed(time.Now().Unix()) // initialize global pseudo random generator
@@ -529,9 +541,9 @@ func (s *Service) Clone(clonedPath string, root string, new bool) (hP *Holochain
 			}
 		}
 
-		for _, z := range h.Zomes {
+		for zname, z := range h.Zomes {
 			var bs []byte
-			srczpath := srcDNAPath + "/" + z.Name
+			srczpath := srcDNAPath + "/" + zname
 			bs, err = readFile(srczpath, z.Code)
 			if err != nil {
 				return
