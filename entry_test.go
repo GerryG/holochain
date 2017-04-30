@@ -61,8 +61,6 @@ func TestJSONSchemaValidator(t *testing.T) {
 	ed := EntryDef{Schema: "schema_profile.json"}
 
 	d := s.Path
-	Debugf(" %v\n", d)
-	execCmd("ls", "-ltR", d)
 	if err := writeFile(d, ed.Schema, []byte(schema)); err != nil {
 		panic(err)
 	}

@@ -49,7 +49,7 @@ func TestSetupDHT(t *testing.T) {
 		e, _, _ = h.chain.GetEntry(h.agentHash)
 
 		var b []byte
-		b, _ = e.Marshal(h.WireType)
+		b, _ = e.Marshal()
 
 		So(string(data), ShouldEqual, string(b))
 	})
@@ -375,7 +375,7 @@ func TestHandleChangeReqs(t *testing.T) {
 		data, et, _, err := h.dht.get(hd.EntryLink)
 		So(err, ShouldBeNil)
 		So(et, ShouldEqual, "primes")
-		b, _ := e.Marshal(h.WireType)
+		b, _ := e.Marshal()
 		So(fmt.Sprintf("%v", data), ShouldEqual, fmt.Sprintf("%v", b))
 	})
 

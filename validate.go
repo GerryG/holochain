@@ -111,7 +111,7 @@ func ValidateReceiver(h *Holochain, m *Message) (response interface{}, err error
 	return
 }
 
-// StartValidate initiates listening for Validate protocol messages on the node
-func (node *Node) StartValidate(h *Holochain) (err error) {
-	return node.StartProtocol(h, ValidateProtocol)
+// startValidate initiates listening for Validate protocol messages on the node
+func (node *Node) startValidate(h *Holochain) (err error) {
+	return node.startProtocol(h, ValidateProtocol)
 }

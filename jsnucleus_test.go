@@ -238,44 +238,44 @@ func TestJSExposeCall(t *testing.T) {
 	cleanup, _, h := prepareTestChain("test")
 	defer cleanup()
 
-	zome, _ := h.GetZome("jsSampleZome")
-	v, err := h.NewNucleus(zome.Name, zome)
+	zome, _ := h.getZome("jsSampleZome")
+	nucObj, err := h.NewNucleus(zome)
 	if err != nil {
 		panic(err)
 	}
-	z := v.(*JSNucleus)
+	nuc := *nucObj
 	Convey("should allow calling exposed STRING based functions", t, func() {
 		cater, _ := h.GetFunctionDef(zome, "testStrFn1")
-		result, err := z.Call(&cater, "fish \"zippy\"")
+		result, err := nuc.Call(&cater, "fish \"zippy\"")
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, "result: fish \"zippy\"")
 
 		adder, _ := h.GetFunctionDef(zome, "testStrFn2")
-		result, err = z.Call(&adder, "10")
+		result, err = nuc.Call(&adder, "10")
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, "12")
 	})
 	Convey("should allow calling exposed JSON based functions", t, func() {
 		times2, _ := h.GetFunctionDef(zome, "testJsonFn1")
-		result, err := z.Call(&times2, `{"input": 2}`)
+		result, err := nuc.Call(&times2, `{"input": 2}`)
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, `{"input":2,"output":4}`)
 	})
 	Convey("should sanitize against bad strings", t, func() {
 		cater, _ := h.GetFunctionDef(zome, "testStrFn1")
-		result, err := z.Call(&cater, "fish \"\nzippy\"")
+		result, err := nuc.Call(&cater, "fish \"\nzippy\"")
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, "result: fish \"zippy\"")
 	})
 	Convey("should sanitize against bad JSON", t, func() {
 		times2, _ := h.GetFunctionDef(zome, "testJsonFn1")
-		result, err := z.Call(&times2, "{\"input\n\": 2}")
+		result, err := nuc.Call(&times2, "{\"input\n\": 2}")
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, `{"input":2,"output":4}`)
 	})
 	Convey("should allow a function declared with JSON parameter to be called with no parameter", t, func() {
 		emptyParametersJson, _ := h.GetFunctionDef(zome, "testJsonFn2")
-		result, err := z.Call(&emptyParametersJson, "")
+		result, err := nuc.Call(&emptyParametersJson, "")
 		So(err, ShouldBeNil)
 		So(result, ShouldEqual, "[{\"a\":\"b\"}]")
 	})

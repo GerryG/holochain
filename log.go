@@ -68,6 +68,33 @@ func Infof(m string, args ...interface{}) {
 	infoLog.Logf(m, args...)
 }
 
+// Usage: defer ErrorHandler(err, "")()
+func ErrorHandler(err error, message string) (handler func()) {
+	handler = func() {
+		if err != nil {
+			Panix(errorMessage(err, message))
+		}
+	}
+	return
+}
+
+func ErrorHandlerf(err error, message string, args ...interface{}) (handler func()) {
+	handler = func() {
+		if err != nil {
+			message = fmt.Sprintf(errorMessage(err, message), args)
+			Panix(message)
+		}
+	}
+	return
+}
+
+func errorMessage(err error, message string) string {
+	if message == "" {
+		message = "Error not handled! Error was: "
+	}
+	return message + err.Error()
+}
+
 func initLoggers() {
 	infoLog.New(nil)
 	debugLog.New(nil)

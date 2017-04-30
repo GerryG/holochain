@@ -259,9 +259,12 @@ func setupApp() (app *cli.App) {
 				}
 				zome := os.Args[3]
 				function := os.Args[4]
-				args := os.Args[5:]
-				fmt.Printf("calling %s on zome %s with params %v\n", function, zome, args)
-				result, err := h.Call(zome, function, strings.Join(args, " "))
+				goArgs := [len(Args)-5]NuclearData
+				for idx, arg := os.Args[5:] {
+					goArgs[idx] = NewNuclearData(arg)
+				}
+				log.Logf("calling %s on zome %s with params %v\n", function, zome, args)
+				result, err := h.Call(zome, function, goArgs)
 				if err != nil {
 					return err
 				}

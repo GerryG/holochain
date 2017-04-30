@@ -75,7 +75,7 @@ func (hd *Header) Sum(holo *Holochain) (hash Hash, b []byte, err error) {
 func (hd *Header) Marshal(holo *Holochain) (b []byte, err error) {
 	var s bytes.Buffer
 	if hd == nil {
-		Debugf("Marshal, hd nil\n")
+		Debugf("Marshal, hd nil")
 	}
 	err = MarshalHeader(&s, hd)
 	if err == nil {
@@ -85,8 +85,7 @@ func (hd *Header) Marshal(holo *Holochain) (b []byte, err error) {
 }
 
 // MarshalHeader writes a header to a binary stream
-func MarshalHeader(writer io.Writer, hd *Header, coding string) (err error) {
-	// do coding
+func MarshalHeader(writer io.Writer, hd *Header) (err error) {
 	var b []byte
 	b = []byte(hd.Type)
 	l := uint8(len(b))
@@ -104,21 +103,21 @@ func MarshalHeader(writer io.Writer, hd *Header, coding string) (err error) {
 		return
 	}
 
-	err = hd.HeaderLink.MarshalHash(writer, coding)
+	err = hd.HeaderLink.MarshalHash(writer)
 	if err != nil {
 		return
 	}
 
-	err = hd.EntryLink.MarshalHash(writer, coding)
+	err = hd.EntryLink.MarshalHash(writer)
 	if err != nil {
 		return
 	}
 
-	err = hd.TypeLink.MarshalHash(writer, coding)
+	err = hd.TypeLink.MarshalHash(writer)
 	if err != nil {
 		return
 	}
-	err = MarshalSignature(writer, &hd.Sig, coding)
+	err = MarshalSignature(writer, &hd.Sig)
 	if err != nil {
 		return
 	}
@@ -161,22 +160,22 @@ func (holo *Holochain) UnmarshalHeader(reader io.Reader, hd *Header, hashSize in
 	}
 	hd.Time.UnmarshalBinary(b)
 
-	err = hd.HeaderLink.UnmarshalHash(reader, holo.WireType)
+	err = hd.HeaderLink.UnmarshalHash(reader)
 	if err != nil {
 		return
 	}
 
-	err = hd.EntryLink.UnmarshalHash(reader, holo.WireType)
+	err = hd.EntryLink.UnmarshalHash(reader)
 	if err != nil {
 		return
 	}
 
-	err = hd.TypeLink.UnmarshalHash(reader, holo.WireType)
+	err = hd.TypeLink.UnmarshalHash(reader)
 	if err != nil {
 		return
 	}
 
-	err = UnmarshalSignature(reader, &hd.Sig, holo.WireType)
+	err = UnmarshalSignature(reader, &hd.Sig)
 	if err != nil {
 		return
 	}
@@ -190,8 +189,7 @@ func (holo *Holochain) UnmarshalHeader(reader io.Reader, hd *Header, hashSize in
 }
 
 // MarshalSignature writes a signature to a binary stream
-func MarshalSignature(writer io.Writer, s *Signature, coding string) (err error) {
-	// Implement coding
+func MarshalSignature(writer io.Writer, s *Signature) (err error) {
 	l := uint8(len(s.S))
 	err = binary.Write(writer, binary.LittleEndian, l)
 	if err != nil {
@@ -205,8 +203,7 @@ func MarshalSignature(writer io.Writer, s *Signature, coding string) (err error)
 }
 
 // UnmarshalSignature reads a Signature from a binary stream
-func UnmarshalSignature(reader io.Reader, s *Signature, coding string) (err error) {
-	// implement coding
+func UnmarshalSignature(reader io.Reader, s *Signature) (err error) {
 	var l uint8
 	err = binary.Read(reader, binary.LittleEndian, &l)
 	if err != nil {

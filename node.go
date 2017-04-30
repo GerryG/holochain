@@ -68,7 +68,6 @@ type Node struct {
 	HashAddr peer.ID
 	NetAddr  ma.Multiaddr
 	Host     *rhost.RoutedHost
-	WireType string
 }
 
 // Protocol encapsulates data for our different protocols
@@ -91,7 +90,6 @@ func (r *Router) FindPeer(context.Context, peer.ID) (peer pstore.PeerInfo, err e
 // NewNode creates a new ipfs basichost node with given identity
 func NewNode(listenAddr string, id peer.ID, priv ic.PrivKey) (node *Node, err error) {
 	var n Node
-	n.WireType = WIRE_GOB // coding
 	n.NetAddr, err = ma.NewMultiaddr(listenAddr)
 	if err != nil {
 		return
@@ -134,8 +132,8 @@ func NewNode(listenAddr string, id peer.ID, priv ic.PrivKey) (node *Node, err er
 
 // Encode codes a message to gob format
 // @TODO generalize for other message encoding formats
-func (m *Message) Encode(coding string) (data []byte, err error) {
-	data, err = ByteEncoder(m, coding)
+func (m *Message) Encode() (data []byte, err error) {
+	data, err = ByteEncoder(m)
 	if err != nil {
 		return
 	}
@@ -144,22 +142,14 @@ func (m *Message) Encode(coding string) (data []byte, err error) {
 
 // Decode converts a message from gob format
 // @TODO generalize for other message encoding formats
-func (m *Message) Decode(r io.Reader, coding string) (err error) {
-	switch coding {
-	case WIRE_GOB:
-		dec := gob.NewDecoder(r)
-		err = dec.Decode(m)
-	case WIRE_JSON:
-		// json
-	default:
-		err = errors.New("Bad coding " + coding)
-	}
+func (m *Message) Decode(r io.Reader) (err error) {
+	dec := gob.NewDecoder(r)
+	err = dec.Decode(m)
 	return
 }
 
 // Fingerprint creates a hash of a message
-func (m *Message) Fingerprint(coding string) (f Hash, err error) {
-	// implement coding
+func (m *Message) Fingerprint() (f Hash, err error) {
 	var data []byte
 	if m != nil {
 		data, err = bson.Marshal(m)
@@ -184,7 +174,7 @@ func (node *Node) respondWith(s net.Stream, err error, body interface{}) {
 		m = node.NewMessage(OK_RESPONSE, body)
 	}
 
-	data, err := m.Encode(node.WireType)
+	data, err := m.Encode()
 	if err != nil {
 		panic(err) //TODO can't panic, gotta do something else!
 	}
@@ -194,11 +184,11 @@ func (node *Node) respondWith(s net.Stream, err error, body interface{}) {
 	}
 }
 
-// StartProtocol initiates listening for a protocol on the node
-func (node *Node) StartProtocol(h *Holochain, proto Protocol) (err error) {
+// startProtocol initiates listening for a protocol on the node
+func (node *Node) startProtocol(h *Holochain, proto Protocol) (err error) {
 	node.Host.SetStreamHandler(proto.ID, func(s net.Stream) {
 		var m Message
-		err := m.Decode(s, node.WireType)
+		err := m.Decode(s)
 		var response interface{}
 		if m.From == "" {
 			// @todo other sanity checks on From?
@@ -227,7 +217,7 @@ func (node *Node) Send(proto Protocol, addr peer.ID, m *Message) (response Messa
 	defer s.Close()
 
 	// encode the message and send it
-	data, err := m.Encode(node.WireType)
+	data, err := m.Encode()
 	if err != nil {
 		return
 	}
@@ -241,7 +231,7 @@ func (node *Node) Send(proto Protocol, addr peer.ID, m *Message) (response Messa
 	}
 
 	// decode the response
-	err = response.Decode(s, node.WireType)
+	err = response.Decode(s)
 	if err != nil {
 		return
 	}

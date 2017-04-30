@@ -57,7 +57,7 @@ func TestTest(t *testing.T) {
 
 	d := h.DNAPath()
 	Convey("it should fail the test on incorrect input types", t, func() {
-		Debugf("path: %v\n", d)
+		Debugf("path: %v", d)
 		execCmd("ls", "-ltrR", d)
 		os.Remove(d + "/.holochain/test/test/test_0.json")
 		err := writeFile(d+"/.holochain/test/test", "test_0.json", []byte(`[{"Zome":"zySampleZome","FnName":"addEven","Input":2,"Output":"%h%","Err":""}]`))

@@ -68,7 +68,7 @@ func (holo *Holochain) NewChainFromFile() (err error) {
 	if fileExists(path) {
 		f, err = os.Open(path)
 		if err != nil {
-			Debugf("error opening db file %v path: %v\n", err, path)
+			Debugf("error opening db file %v path: %v", err, path)
 			return
 		}
 		var i int
@@ -117,10 +117,10 @@ func (holo *Holochain) NewChainFromFile() (err error) {
 	} else {
 		f, err = os.Create(path)
 		if err != nil {
-			Debugf("error %v path: %v\n", err, path)
+			Debugf("error %v path: %v", err, path)
 			return
 		}
-		fmt.Printf("created %v\n", path)
+		Infof("created %v", path)
 	}
 	chain.s = f
 	return
@@ -172,7 +172,7 @@ func (holo *Holochain) PrepareHeader(now time.Time, entryType string, e Entry, k
 		Debug("no chain")
 		return
 	}
-	//Debugf("PH %v\n", holo.chain.Hashes)
+	//Debugf("PH %v", holo.chain.Hashes)
 	l := len(holo.chain.Hashes)
 	if l == 0 {
 		ph = NullHash()
@@ -277,7 +277,7 @@ func (holo *Holochain) readPair(reader io.Reader) (header *Header, entry Entry, 
 func (holo *Holochain) MarshalChain(writer io.Writer) (err error) {
 
 	var l = uint64(len(holo.chain.Headers))
-	//Debugf("MC Hdrs cnt: %v\n", l)
+	//Debugf("MC Hdrs cnt: %v", l)
 	err = binary.Write(writer, binary.LittleEndian, l)
 	if err != nil {
 		return err
@@ -294,7 +294,7 @@ func (holo *Holochain) MarshalChain(writer io.Writer) (err error) {
 		hash := holo.chain.Hashes[l-1]
 		err = hash.MarshalHash(writer)
 	} else {
-		Debug("No Entries to marshal\n")
+		Debug("No Entries to marshal")
 	}
 
 	return
@@ -344,7 +344,7 @@ func (holo *Holochain) UnmarshalChain(reader io.Reader) (err error) {
 	}
 	// decode final hash
 	var h Hash
-	err = h.UnmarshalHash(reader, holo.WireType)
+	err = h.UnmarshalHash(reader)
 	if err != nil {
 		return
 	}
@@ -417,7 +417,7 @@ func (c *Chain) String() string {
 	r := ""
 	for i := 0; i < l; i++ {
 		r += fmt.Sprintf("Header:%v\n", *c.Headers[i])
-		r += fmt.Sprintf("Entry:%v\n\n", c.Entries[i])
+		r += fmt.Sprintf("Entry:%v\n", c.Entries[i])
 	}
 	r += "Hashlist:\n"
 	for i := 0; i < len(c.Headers); i++ {

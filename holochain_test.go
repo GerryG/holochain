@@ -14,7 +14,8 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	Initialize(InitializeProtocols)
+	Crash = true
+	Initialize(nil)
 	os.Exit(m.Run())
 }
 
@@ -46,7 +47,7 @@ func TestNewHolochain(t *testing.T) {
 
 		h := NewHolochain(a, "some/path", "yaml")
 		h.Zomes = map[string]Zome{z.Name: z}
-		nz, _ := h.GetZome("zySampleZome")
+		nz, _ := h.getZome("zySampleZome")
 		So(nz.Description, ShouldEqual, "zome desc")
 		So(nz.Code, ShouldEqual, "zome_zySampleZome.zy")
 		So(fmt.Sprintf("%v", nz.Entries["entryTypeFoo"]), ShouldEqual, "{entryTypeFoo string    <nil>}")
@@ -59,7 +60,7 @@ func TestPrepare(t *testing.T) {
 	Convey("it should fail if the requires version is incorrect", t, func() {
 		h := Holochain{RequiresVersion: Version + 1}
 		nextVersion := fmt.Sprintf("%d", Version+1)
-		err := h.Prepare()
+		err := h.prepare()
 		So(err.Error(), ShouldEqual, "Chain requires Holochain version "+nextVersion)
 
 	})
@@ -67,7 +68,7 @@ func TestPrepare(t *testing.T) {
 		cleanup, _, h := genTestChain("test")
 		defer cleanup()
 		h.RequiresVersion = Version
-		err := h.Prepare()
+		err := h.prepare()
 		So(err, ShouldBeNil)
 	})
 	//@todo build out test for other tests for prepare
@@ -77,12 +78,12 @@ func TestPrepareHashType(t *testing.T) {
 
 	Convey("A bad hash type should return an error", t, func() {
 		h := Holochain{HashType: "bogus"}
-		err := h.PrepareHashType()
+		err := h.prepareHashType()
 		So(err.Error(), ShouldEqual, "Unknown hash type: bogus")
 	})
 	Convey("It should initialized fixed and variable sized hashes", t, func() {
 		holo := &Holochain{HashType: "sha1"}
-		err := holo.PrepareHashType()
+		err := holo.prepareHashType()
 		So(err, ShouldBeNil)
 		var hash Hash
 		err = hash.Sum(holo, []byte("test data"))
@@ -90,7 +91,7 @@ func TestPrepareHashType(t *testing.T) {
 		So(hash.String(), ShouldEqual, "5duC28CW416wX42vses7TeTeRYwku9")
 
 		holo.HashType = "blake2b-256"
-		err = holo.PrepareHashType()
+		err = holo.prepareHashType()
 		So(err, ShouldBeNil)
 		err = hash.Sum(holo, []byte("test data"))
 		So(err, ShouldBeNil)
@@ -326,18 +327,18 @@ func TestGenChain(t *testing.T) {
 		var h2 Holochain
 		_, err = toml.DecodeFile(holo.DNAPath()+"/"+DNAFileName+".toml", &h2)
 		So(err, ShouldBeNil)
-		z2, _ := h2.GetZome("zySampleZome")
-		z1, _ := holo.GetZome("zySampleZome")
-		Debugf("Zome before: %v\n", z2)
-		Debugf("Zome before: %v\n", z1)
+		z2, _ := h2.getZome("zySampleZome")
+		z1, _ := holo.getZome("zySampleZome")
+		Debugf("Zome before: %v", z2)
+		Debugf("Zome before: %v", z1)
 		So(z2.CodeHash.String(), ShouldEqual, z1.CodeHash.String())
 		execCmd("ls", "-ltR", holo.DNAPath())
 		b, _ := readFile(holo.DNAPath()+"/zySampleZome", "profile.json")
-		Debugf("pf.json %s\n", string(b))
+		Debugf("pf.json %s", string(b))
 		var sh Hash
 		sh.Sum(holo, b)
 
-		Debugf("D:%v\n", z2.Entries)
+		Debugf("D:%v", z2.Entries)
 		So(z1.Entries["entryTypeFoo"].SchemaHash.String(), ShouldEqual, sh.String())
 		So(z2.Entries["entryTypeFoo"].SchemaHash.String(), ShouldEqual, sh.String())
 	})
@@ -442,15 +443,100 @@ func TestValidate(t *testing.T) {
 	})
 }
 
+func TestValidatePrepare(t *testing.T) {
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
+
+	Convey("it should fail if a validator doesn't exist for the entry type", t, func() {
+		hdr := mkTestHeader("bogusType")
+		d, _, n, err := h.validatePrepare(hdr.Type, &EntryObj{C: "foo"}, []peer.ID{h.id})
+		So(err.Error(), ShouldEqual, "no definition for entry type: bogusType")
+		So(d, ShouldBeNil)
+		So(n, ShouldBeNil)
+	})
+	Convey("a nil entry is invalid", t, func() {
+		hdr := mkTestHeader("evenNumbers")
+		_, _, _, err := h.validatePrepare(hdr.Type, nil, []peer.ID{h.id})
+		So(err.Error(), ShouldEqual, "nil entry invalid")
+	})
+
+	profile := `{"firstName":"Eric","lastName":"H-B"}`
+	hdr := mkTestHeader("profile")
+	h.prepare()
+	Convey("successful prepare should convert sources and return a nucleus", t, func() {
+		_, srcs, _, err := h.validatePrepare(hdr.Type, &EntryObj{C: profile}, []peer.ID{h.id})
+		So(err, ShouldBeNil)
+		So(fmt.Sprintf("%v", srcs), ShouldEqual, "["+peer.IDB58Encode(h.id)+"]")
+	})
+
+	Convey("validate on a schema based entry should check entry against the schema", t, func() {
+		profile = `{"firstName":"Eric"}` // missing required lastName
+		_, _, _, err := h.validatePrepare(hdr.Type, &EntryObj{C: profile}, []peer.ID{h.id})
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldEqual, "validator profile.json failed: object property 'lastName' is required")
+	})
+
+	hdr = mkTestHeader("rating")
+	Convey("validate on a links entry should fail if not formatted correctly", t, func() {
+		_, _, _, err := h.validatePrepare(hdr.Type, &EntryObj{C: "badjson"}, []peer.ID{h.id})
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldEqual, "invalid links entry, invalid json: invalid character 'b' looking for beginning of value")
+
+		_, _, _, err = h.validatePrepare(hdr.Type, &EntryObj{C: `{}`}, []peer.ID{h.id})
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldEqual, "invalid links entry: you must specify at least one link")
+
+		_, _, _, err = h.validatePrepare(hdr.Type, &EntryObj{C: `{"Links":[{}]}`}, []peer.ID{h.id})
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldEqual, "invalid links entry: missing Base")
+
+		_, _, _, err = h.validatePrepare(hdr.Type, &EntryObj{C: `{"Links":[{"Base":"x","Link":"x","Tag":"sometag"}]}`}, []peer.ID{h.id})
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldEqual, "invalid links entry: Base multihash too short. must be > 3 bytes")
+		_, _, _, err = h.validatePrepare(hdr.Type, &EntryObj{C: `{"Links":[{"Base":"QmdRXz53TVT9qBYfbXctHyy2GpTNa6YrpAy6ZcDGG8Xhc5","Link":"x","Tag":"sometag"}]}`}, []peer.ID{h.id})
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldEqual, "invalid links entry: Link multihash too short. must be > 3 bytes")
+
+		_, _, _, err = h.validatePrepare(hdr.Type, &EntryObj{C: `{"Links":[{"Base":"QmdRXz53TVT9qBYfbXctHyy2GpTNa6YrpAy6ZcDGG8Xhc5","Link":"QmdRXz53TVT9qBYfbXctHyy2GpTNa6YrpAy6ZcDGG8Xhc5"}]}`}, []peer.ID{h.id})
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldEqual, "invalid links entry: missing Tag")
+	})
+}
+
+func TestValidateCommit(t *testing.T) {
+	cleanup, _, h := prepareTestChain("test")
+	defer cleanup()
+	var err error
+
+	Convey("it should fail if a validator doesn't exist for the entry type", t, func() {
+		hdr := mkTestHeader("bogusType")
+		_, err = h.ValidateCommit(hdr.Type, &EntryObj{C: "foo"}, &hdr, []peer.ID{h.id})
+		So(err.Error(), ShouldEqual, "no definition for entry type: bogusType")
+	})
+
+	Convey("a valid entry validates", t, func() {
+		hdr := mkTestHeader("evenNumbers")
+		var d *EntryDef
+		d, err = h.ValidateCommit(hdr.Type, &EntryObj{C: "2"}, &hdr, []peer.ID{h.id})
+		So(err, ShouldBeNil)
+		So(fmt.Sprintf("%v", d), ShouldEqual, "&{evenNumbers zygo   public <nil>}")
+	})
+	Convey("an invalid entry doesn't validate", t, func() {
+		hdr := mkTestHeader("evenNumbers")
+		_, err = h.ValidateCommit(hdr.Type, &EntryObj{C: "1"}, &hdr, []peer.ID{h.id})
+		So(err.Error(), ShouldEqual, "Invalid entry: 1")
+	})
+}
+
 func TestGetZome(t *testing.T) {
 	cleanup, _, h := genTestChain("test")
 	defer cleanup()
 	Convey("it should fail if the zome isn't defined in the DNA", t, func() {
-		_, err := h.GetZome("bogusZome")
+		_, err := h.getZome("bogusZome")
 		So(err.Error(), ShouldEqual, "unknown zome: bogusZome")
 	})
 	Convey("it should return the Zome structure of a defined zome", t, func() {
-		z, err := h.GetZome("zySampleZome")
+		z, err := h.getZome("zySampleZome")
 		So(err, ShouldBeNil)
 		So(z.Name, ShouldEqual, "zySampleZome")
 	})
@@ -459,7 +545,7 @@ func TestGetZome(t *testing.T) {
 func TestGetFunctionDef(t *testing.T) {
 	cleanup, _, h := genTestChain("test")
 	defer cleanup()
-	z, _ := h.GetZome("zySampleZome")
+	z, _ := h.getZome("zySampleZome")
 
 	Convey("it should fail if the fn isn't defined in the DNA", t, func() {
 		_, err := h.GetFunctionDef(z, "foo")

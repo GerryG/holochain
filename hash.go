@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	mh "github.com/multiformats/go-multihash"
 	"io"
 )
@@ -40,9 +41,23 @@ func (h Hash) String() string {
 }
 
 // Sum builds a digest according to the specs in the Holochain
+//func (holo *Holochain) Sum(hash *Hash, data []byte) (err error) {
 func (hash *Hash) Sum(holo *Holochain, data []byte) (err error) {
 	hspec := holo.HashSpec
 	hash.H, err = mh.Sum(data, hspec.Code, hspec.Length)
+	return
+}
+
+// prepareHashType makes sure the given string is a correct multi-hash and stores
+// the code and length to the Holochain struct
+func (h *Holochain) prepareHashType() (err error) {
+	c, ok := mh.Names[h.HashType]
+	Debugf("prepareHashType[%v] %v", h.HashType, string(c))
+	if !ok {
+		return fmt.Errorf("Unknown hash type: %s", h.HashType)
+	}
+	h.HashSpec.Code = c
+	h.HashSpec.Length = -1
 	return
 }
 
@@ -74,8 +89,7 @@ func (h *Hash) Equal(h2 *Hash) bool {
 }
 
 // MarshalHash writes a hash to a binary stream
-func (h *Hash) MarshalHash(writer io.Writer, coding string) (err error) {
-	// implement coding
+func (h *Hash) MarshalHash(writer io.Writer) (err error) {
 	if h.IsNullHash() {
 		b := make([]byte, 34)
 		err = binary.Write(writer, binary.LittleEndian, b)
@@ -90,9 +104,8 @@ func (h *Hash) MarshalHash(writer io.Writer, coding string) (err error) {
 }
 
 // UnmarshalHash reads a hash from a binary stream
-func (h *Hash) UnmarshalHash(reader io.Reader, coding string) (err error) {
+func (h *Hash) UnmarshalHash(reader io.Reader) (err error) {
 	b := make([]byte, 34)
-	Debugf("Coding in UnmarshalHash %v\n", coding)
 	err = binary.Read(reader, binary.LittleEndian, b)
 	if err == nil {
 		if b[0] == 0 {

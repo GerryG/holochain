@@ -18,7 +18,7 @@ import (
 func (s *Service) GenDev(root string, format string) (hP *Holochain, err error) {
 	hP, err = gen(root, func(root string) (hP *Holochain, err error) {
 		agent, err := LoadAgent(filepath.Dir(root))
-		Debugf("Gat agent[%v], %v (%v)\n", err, agent, root)
+		Debugf("Got agent[%v], %v (%v)", err, agent, root)
 		if err != nil {
 			return
 		}
@@ -113,7 +113,7 @@ function genesis() {return true}
 
 		for name, z := range h.Zomes {
 
-			Debugf("Process Z: %v, %v\n", name, z)
+			Debugf("Process Z: %v, %v", name, z)
 			zpath := h.ZomePath(&z)
 
 			if err = os.MkdirAll(zpath, os.ModePerm); err != nil {
@@ -121,7 +121,7 @@ function genesis() {return true}
 			}
 
 			c, _ := code[z.Name]
-			Debugf("write code %v %v, C:%v\n", name, z.Name, c)
+			Debugf("write code %v %v, C:%v", name, z.Name, c)
 			if err = writeFile(zpath, z.Code, []byte(c)); err != nil {
 				return
 			}
@@ -167,45 +167,45 @@ function genesis() {return true}
 
 // maybe put in sample.go ?
 // for generic sample
-var SampleZomes = map[string]Zome{
-	"zySampleZome": {
+var SampleZomes = []Zome{
+	{
 		Name:        "zySampleZome",
 		Code:        "zySampleZome.zy",
 		Description: "this is a zygomas test zome",
 		NucleusType: ZygoNucleusType,
-		Entries: map[string]EntryDef{
-			"evenNumbers": {Name: "evenNumbers", DataFormat: DataFormatRawZygo, Sharing: Public},
-			"primes":      {Name: "primes", DataFormat: DataFormatJSON, Sharing: Public},
-			"profile":     {Name: "profile", DataFormat: DataFormatJSON, Schema: "profile.json", Sharing: Public},
+		Entries: []EntryDef{
+			{Name: "evenNumbers", DataFormat: DataFormatRawZygo, Sharing: Public},
+			{Name: "primes", DataFormat: DataFormatJSON, Sharing: Public},
+			{Name: "profile", DataFormat: DataFormatJSON, Schema: "profile.json", Sharing: Public},
 		},
-		Functions: map[string]FunctionDef{
-			"getDNA":      {Name: "getDNA", CallingType: STRING_CALLING},
-			"addEven":     {Name: "addEven", CallingType: STRING_CALLING},
-			"addPrime":    {Name: "addPrime", CallingType: JSON_CALLING},
-			"testStrFn1":  {Name: "testStrFn1", CallingType: STRING_CALLING},
-			"testStrFn2":  {Name: "testStrFn2", CallingType: STRING_CALLING},
-			"testJsonFn1": {Name: "testJsonFn1", CallingType: JSON_CALLING},
-			"testJsonFn2": {Name: "testJsonFn2", CallingType: JSON_CALLING},
+		Functions: []FunctionDef{
+			{Name: "getDNA", CallingType: STRING_CALLING},
+			{Name: "addEven", CallingType: STRING_CALLING},
+			{Name: "addPrime", CallingType: JSON_CALLING},
+			{Name: "testStrFn1", CallingType: STRING_CALLING},
+			{Name: "testStrFn2", CallingType: STRING_CALLING},
+			{Name: "testJsonFn1", CallingType: JSON_CALLING},
+			{Name: "testJsonFn2", CallingType: JSON_CALLING},
 		},
 	},
-	"jsSampleZome": {
+	{
 		Name:        "jsSampleZome",
 		Code:        "jsSampleZome.js",
 		Description: "this is a javascript test zome",
 		NucleusType: JSNucleusType,
-		Entries: map[string]EntryDef{
-			"oddNumbers": {Name: "oddNumbers", DataFormat: DataFormatRawJS, Sharing: Public},
-			"profile":    {Name: "profile", DataFormat: DataFormatJSON, Schema: "profile.json", Sharing: Public},
-			"rating":     {Name: "rating", DataFormat: DataFormatLinks},
+		Entries: []EntryDef{
+			{Name: "oddNumbers", DataFormat: DataFormatRawJS, Sharing: Public},
+			{Name: "profile", DataFormat: DataFormatJSON, Schema: "profile.json", Sharing: Public},
+			{Name: "rating", DataFormat: DataFormatLinks},
 		},
-		Functions: map[string]FunctionDef{
-			"oddNumbers":  {Name: "getProperty", CallingType: STRING_CALLING},
-			"oddOdd":      {Name: "addOdd", CallingType: STRING_CALLING},
-			"oddProfile":  {Name: "addProfile", CallingType: JSON_CALLING},
-			"testStrFn1":  {Name: "testStrFn1", CallingType: STRING_CALLING},
-			"testStrFn2":  {Name: "testStrFn2", CallingType: STRING_CALLING},
-			"testJsonFn1": {Name: "testJsonFn1", CallingType: JSON_CALLING},
-			"testJsonFn2": {Name: "testJsonFn2", CallingType: JSON_CALLING},
+		Functions: []FunctionDef{
+			{Name: "getProperty", CallingType: STRING_CALLING},
+			{Name: "addOdd", CallingType: STRING_CALLING},
+			{Name: "addProfile", CallingType: JSON_CALLING},
+			{Name: "testStrFn1", CallingType: STRING_CALLING},
+			{Name: "testStrFn2", CallingType: STRING_CALLING},
+			{Name: "testJsonFn1", CallingType: JSON_CALLING},
+			{Name: "testJsonFn2", CallingType: JSON_CALLING},
 		}},
 }
 
