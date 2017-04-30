@@ -83,7 +83,7 @@ func TestGossipData(t *testing.T) {
 	m1 := h.node.NewMessage(PUT_REQUEST, PutReq{H: hash})
 
 	Convey("fingerprints for messages should not exist", t, func() {
-		f, _ := m1.Fingerprint(h.WireType)
+		f, _ := m1.Fingerprint()
 		r, _ := dht.HaveFingerprint(f)
 		So(r, ShouldBeFalse)
 	})
@@ -104,10 +104,10 @@ func TestGossipData(t *testing.T) {
 	h.dht.simHandleChangeReqs()
 
 	Convey("fingerprints for messages should exist", t, func() {
-		f, _ := m1.Fingerprint(h.WireType)
+		f, _ := m1.Fingerprint()
 		r, _ := dht.HaveFingerprint(f)
 		So(r, ShouldBeTrue)
-		f, _ = m1.Fingerprint(h.WireType)
+		f, _ = m1.Fingerprint()
 		r, _ = dht.HaveFingerprint(f)
 		So(r, ShouldBeTrue)
 	})

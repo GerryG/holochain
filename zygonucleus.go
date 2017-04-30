@@ -17,14 +17,9 @@ import (
 	"time"
 )
 
-const (
-	ZygoNucleusType = "zygo"
-)
-
 type ZygoNucleus struct {
-	env        *zygo.Glisp
-	lastResult zygo.Sexp
-	library    string
+	GoNucleus
+	library string
 }
 
 // Type returns the string value under which this nucleus is registered
@@ -33,11 +28,11 @@ func (z *ZygoNucleus) Type() string { return ZygoNucleusType }
 // ChainGenesis runs the application genesis function
 // this function gets called after the genesis entries are added to the chain
 func (z *ZygoNucleus) ChainGenesis() (err error) {
-	err = z.env.LoadString(`(genesis)`)
+	err = z.vm.LoadString(`(genesis)`)
 	if err != nil {
 		return
 	}
-	result, err := z.env.Run()
+	result, err := z.vm.Run()
 	if err != nil {
 		err = fmt.Errorf("Error executing genesis: %v", err)
 		return
@@ -59,8 +54,8 @@ func (z *ZygoNucleus) ChainGenesis() (err error) {
 }
 
 // ValidateCommit checks the contents of an entry against the validation rules at commit time
-func (z *ZygoNucleus) ValidateCommit(def *EntryDef, entry Entry, header *Header, sources []string) (err error) {
-	err = z.validateEntry("validateCommit", def, entry, header, sources)
+func (z *ZygoNucleus) ValidateCommit(entryType string, entry Entry, header *Header, sources []string) (err error) {
+	err = z.validateEntry("validateCommit", entryType, entry, header, sources)
 	return
 }
 
@@ -101,7 +96,11 @@ func mkSources(sources []string) (srcs string) {
 	return
 }
 
-func (z *ZygoNucleus) prepareValidateArgs(def *EntryDef, entry Entry, sources []string) (e string, srcs string, err error) {
+func (z *ZygoNucleus) prepareValidateArgs(entryType string, entry Entry, sources []string) (e string, srcs string, err error) {
+	def, err := z.hc.GetEntryDef(entryType)
+	if err != nil {
+		return
+	}
 	c := entry.Content().(string)
 	// @todo handle JSON if schema type is different
 	switch def.DataFormat {
@@ -122,11 +121,11 @@ func (z *ZygoNucleus) prepareValidateArgs(def *EntryDef, entry Entry, sources []
 }
 
 func (z *ZygoNucleus) runValidate(fnName string, code string) (err error) {
-	err = z.env.LoadString(code)
+	err = z.vm.LoadString(code)
 	if err != nil {
 		return
 	}
-	result, err := z.env.Run()
+	result, err := z.vm.Run()
 	if err != nil {
 		err = fmt.Errorf("Error executing %s: %v", fnName, err)
 		return
@@ -146,8 +145,8 @@ func (z *ZygoNucleus) runValidate(fnName string, code string) (err error) {
 	return
 }
 
-func (z *ZygoNucleus) validateEntry(fnName string, def *EntryDef, entry Entry, header *Header, sources []string) (err error) {
-	e, srcs, err := z.prepareValidateArgs(def, entry, sources)
+func (z *ZygoNucleus) validateEntry(fnName string, entryType string, entry Entry, header *Header, sources []string) (err error) {
+	e, srcs, err := z.prepareValidateArgs(entryType, entry, sources)
 	if err != nil {
 		return
 	}
@@ -164,7 +163,7 @@ func (z *ZygoNucleus) validateEntry(fnName string, def *EntryDef, entry Entry, h
 		hdr = `""`
 	}
 
-	code := fmt.Sprintf(`(%s "%s" %s %s %s)`, fnName, def.Name, e, hdr, srcs)
+	code := fmt.Sprintf(`(%s "%s" %s %s %s)`, fnName, entryType, e, hdr, srcs)
 	Debugf("%s: %s", fnName, code)
 
 	err = z.runValidate(fnName, code)
@@ -181,29 +180,30 @@ func sanitizeString(s string) string {
 }
 
 // Call calls the zygo function that was registered with expose
-func (z *ZygoNucleus) Call(fn *FunctionDef, params interface{}) (result interface{}, err error) {
+func (z *ZygoNucleus) Call(function string, params interface{}) (result interface{}, err error) {
+	fnDef := z.zome.GetNucleus(function)
 	var code string
-	switch fn.CallingType {
+	switch fnDef.CallingType {
 	case STRING_CALLING:
-		code = fmt.Sprintf(`(%s "%s")`, fn.Name, sanitizeString(params.(string)))
+		code = fmt.Sprintf(`(%s "%s")`, fnDef.Name, sanitizeString(params.(string)))
 	case JSON_CALLING:
 		if params.(string) == "" {
-			code = fmt.Sprintf(`(json (%s (raw "%s")))`, fn.Name, sanitizeString(params.(string)))
+			code = fmt.Sprintf(`(json (%s (raw "%s")))`, fnDef.Name, sanitizeString(params.(string)))
 		} else {
-			code = fmt.Sprintf(`(json (%s (unjson (raw "%s"))))`, fn.Name, sanitizeString(params.(string)))
+			code = fmt.Sprintf(`(json (%s (unjson (raw "%s"))))`, fnDef.Name, sanitizeString(params.(string)))
 		}
 	default:
 		err = errors.New("params type not implemented")
 		return
 	}
 	Debugf("Zygo Call: %s", code)
-	err = z.env.LoadString(code)
+	err = z.vm.LoadString(code)
 	if err != nil {
 		return
 	}
-	result, err = z.env.Run()
+	result, err = z.vm.Run()
 	if err == nil {
-		switch fn.CallingType {
+		switch fnDef.CallingType {
 		case STRING_CALLING:
 			switch t := result.(type) {
 			case *zygo.SexpStr:
@@ -234,8 +234,8 @@ func (z *ZygoNucleus) Call(fn *FunctionDef, params interface{}) (result interfac
 var ZygoLibrary = `(def HC_Version "` + VersionStr + `")`
 
 // get exposes DHTGet to zygo
-func (z *ZygoNucleus) get(env *zygo.Glisp, h *Holochain, hash string) (result *zygo.SexpHash, err error) {
-	result, err = zygo.MakeHash(nil, "hash", env)
+func (z *ZygoNucleus) get(vm *zygo.Glisp, h *Holochain, hash string) (result *zygo.SexpHash, err error) {
+	result, err = zygo.MakeHash(nil, "hash", vm)
 	if err != nil {
 		return nil, err
 	}
@@ -247,17 +247,17 @@ func (z *ZygoNucleus) get(env *zygo.Glisp, h *Holochain, hash string) (result *z
 		// @TODO figure out encoding by entry type.
 		j, err := json.Marshal(t.C)
 		if err == nil {
-			err = result.HashSet(env.MakeSymbol("result"), &zygo.SexpStr{S: string(j)})
+			err = result.HashSet(vm.MakeSymbol("result"), &zygo.SexpStr{S: string(j)})
 		}
 	} else {
-		err = result.HashSet(env.MakeSymbol("error"), &zygo.SexpStr{S: err.Error()})
+		err = result.HashSet(vm.MakeSymbol("error"), &zygo.SexpStr{S: err.Error()})
 	}
 	return result, err
 }
 
 // getlink exposes GetLink to zygo
-func (z *ZygoNucleus) getlink(env *zygo.Glisp, h *Holochain, base string, tag string, options GetLinkOptions) (result *zygo.SexpHash, err error) {
-	result, err = zygo.MakeHash(nil, "hash", env)
+func (z *ZygoNucleus) getlink(vm *zygo.Glisp, h *Holochain, base string, tag string, options GetLinkOptions) (result *zygo.SexpHash, err error) {
+	result, err = zygo.MakeHash(nil, "hash", vm)
 	if err != nil {
 		return nil, err
 	}
@@ -269,20 +269,20 @@ func (z *ZygoNucleus) getlink(env *zygo.Glisp, h *Holochain, base string, tag st
 		var j []byte
 		j, err = json.Marshal(response.Links)
 		if err == nil {
-			err = result.HashSet(env.MakeSymbol("result"), &zygo.SexpStr{S: string(j)})
+			err = result.HashSet(vm.MakeSymbol("result"), &zygo.SexpStr{S: string(j)})
 		}
 	} else {
-		err = result.HashSet(env.MakeSymbol("error"), &zygo.SexpStr{S: err.Error()})
+		err = result.HashSet(vm.MakeSymbol("error"), &zygo.SexpStr{S: err.Error()})
 	}
 	return result, err
 }
 
-// NewZygoNucleus builds an zygo execution environment with user specified code
+// NewZygoNucleus builds an zygo execution vm with user specified code
 func NewZygoNucleus(h *Holochain, code string) (n Nucleus, err error) {
 	var z ZygoNucleus
-	z.env = zygo.NewGlispSandbox()
-	z.env.AddFunction("version",
-		func(env *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
+	z.vm = zygo.NewGlispSandbox()
+	z.vm.AddFunction("version",
+		func(vm *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
 			return &zygo.SexpStr{S: VersionStr}, nil
 		})
 
@@ -290,8 +290,8 @@ func NewZygoNucleus(h *Holochain, code string) (n Nucleus, err error) {
 
 	// use a closure so that the registered zygo function can call Expose on the correct ZygoNucleus obj
 
-	z.env.AddFunction("debug",
-		func(env *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
+	z.vm.AddFunction("debug",
+		func(vm *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
 			if len(args) != 1 {
 				return zygo.SexpNull, zygo.WrongNargs
 			}
@@ -316,8 +316,8 @@ func NewZygoNucleus(h *Holochain, code string) (n Nucleus, err error) {
 			return zygo.SexpNull, err
 		})
 
-	z.env.AddFunction("property",
-		func(env *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
+	z.vm.AddFunction("property",
+		func(vm *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
 			if len(args) != 1 {
 				return zygo.SexpNull, zygo.WrongNargs
 			}
@@ -340,8 +340,8 @@ func NewZygoNucleus(h *Holochain, code string) (n Nucleus, err error) {
 			return &result, err
 		})
 
-	z.env.AddFunction("commit",
-		func(env *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
+	z.vm.AddFunction("commit",
+		func(vm *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
 			if len(args) != 2 {
 				return zygo.SexpNull, zygo.WrongNargs
 			}
@@ -377,8 +377,8 @@ func NewZygoNucleus(h *Holochain, code string) (n Nucleus, err error) {
 			return &result, nil
 		})
 
-	z.env.AddFunction("get",
-		func(env *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
+	z.vm.AddFunction("get",
+		func(vm *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
 			if len(args) != 1 {
 				return zygo.SexpNull, zygo.WrongNargs
 			}
@@ -391,12 +391,12 @@ func NewZygoNucleus(h *Holochain, code string) (n Nucleus, err error) {
 				return zygo.SexpNull,
 					errors.New("argument of get should be string")
 			}
-			result, err := z.get(env, h, hashstr)
+			result, err := z.get(vm, h, hashstr)
 			return result, err
 		})
 
-	z.env.AddFunction("getlink",
-		func(env *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
+	z.vm.AddFunction("getlink",
+		func(vm *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
 			l := len(args)
 			if l < 2 || l > 3 {
 				return zygo.SexpNull, zygo.WrongNargs
@@ -424,7 +424,7 @@ func NewZygoNucleus(h *Holochain, code string) (n Nucleus, err error) {
 			if l == 3 {
 				switch t := args[2].(type) {
 				case *zygo.SexpHash:
-					r, err := t.HashGet(z.env, z.env.MakeSymbol("Load"))
+					r, err := t.HashGet(z.vm, z.vm.MakeSymbol("Load"))
 					if err == nil {
 						switch t := r.(type) {
 						case *zygo.SexpBool:
@@ -440,7 +440,7 @@ func NewZygoNucleus(h *Holochain, code string) (n Nucleus, err error) {
 				}
 
 			}
-			result, err := z.getlink(env, h, hashstr, typestr, options)
+			result, err := z.getlink(vm, h, hashstr, typestr, options)
 			return result, err
 		})
 
@@ -458,15 +458,17 @@ func NewZygoNucleus(h *Holochain, code string) (n Nucleus, err error) {
 	return
 }
 
+type ZygoFunc func(...interface{}) (res interface{}, err errors)
+
 // Run executes zygo code
 func (z *ZygoNucleus) Run(code string) (result zygo.Sexp, err error) {
 	c := fmt.Sprintf("(begin %s %s)", z.library, code)
-	err = z.env.LoadString(c)
+	err = z.vm.LoadString(c)
 	if err != nil {
 		err = errors.New("Zygomys load error: " + err.Error())
 		return
 	}
-	result, err = z.env.Run()
+	result, err = z.vm.Run()
 	if err != nil {
 		err = errors.New("Zygomys exec error: " + err.Error())
 		return
@@ -504,8 +506,8 @@ func isPrime(t int64) bool {
 }
 
 func addExtras(z *ZygoNucleus) {
-	z.env.AddFunction("isprime",
-		func(env *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
+	z.vm.AddFunction("isprime",
+		func(vm *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
 
 			switch t := args[0].(type) {
 			case *zygo.SexpInt:
@@ -515,8 +517,8 @@ func addExtras(z *ZygoNucleus) {
 					errors.New("argument to isprime should be int")
 			}
 		})
-	z.env.AddFunction("atoi",
-		func(env *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
+	z.vm.AddFunction("atoi",
+		func(vm *zygo.Glisp, name string, args []zygo.Sexp) (zygo.Sexp, error) {
 
 			var i int64
 			var e error

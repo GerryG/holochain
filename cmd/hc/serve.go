@@ -127,8 +127,12 @@ func serve(h *holo.Holochain, port string) {
 
 func call(h *holo.Holochain, zome string, function string, args string) (result interface{}, err error) {
 
+	goArgs := [len(Args)-5]NuclearData
+	for idx, arg := os.Args[5:] {
+		goArgs[idx] = NewNuclearData(arg)
+	}
 	log.Logf("calling %s:%s(%s)\n", zome, function, args)
-	result, err = h.Call(zome, function, args)
+	result, err = h.Call(zome, function, goArgs)
 
 	if err != nil {
 		_, err = mkErr(err.Error(), 400)

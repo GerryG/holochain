@@ -17,7 +17,6 @@ import (
 	ic "github.com/libp2p/go-libp2p-crypto"
 	peer "github.com/libp2p/go-libp2p-peer"
 	protocol "github.com/libp2p/go-libp2p-protocol"
-	mh "github.com/multiformats/go-multihash"
 	"io"
 	"math/rand"
 	"os"
@@ -48,14 +47,14 @@ type Holochain struct {
 	Properties       map[string]string
 	PropertiesSchema string
 	HashType         string
-	WireType         string // WIRE_* string constants
-	BasedOn          Hash   // holochain hash for base schemas and code
-	Zomes            map[string]Zome
+	BasedOn          Hash // holochain hash for base schemas and code
+	Zomes            []Zome
 	RequiresVersion  int
 	//---- private values not serialized; initialized on Load
-	nuclei         map[string]*ZygoNucleus
-	zomeDefs       map[string]*Zome
-	id             peer.ID // this is hash of the id, also used in the node
+	nuclei         map[string]*Nucleus     // Cache instantiated nuclei by zome name
+	entryDefs      map[string]*EntryDef    // Cache of by entry type all zomes
+	fnDefs         map[string]*FunctionDef // Cache of by function name, all zomes
+	id             peer.ID                 // this is hash of the id, also used in the node
 	dnaHash        Hash
 	agentHash      Hash
 	rootPath       string
@@ -63,9 +62,10 @@ type Holochain struct {
 	encodingFormat string
 	HashSpec       HashType
 	config         Config
-	dht            *DHT
-	node           *Node
-	chain          *Chain // the chain itself
+	// Stores and Networks
+	dht   *DHT
+	node  *Node
+	chain *Chain
 }
 
 // Initialize function that must be called once at startup by any client app
@@ -95,7 +95,11 @@ func Initialize(initProtocols func()) {
 
 	rand.Seed(time.Now().Unix()) // initialize global pseudo random generator
 
-	initProtocols()
+	if initProtocols != nil {
+		initProtocols()
+	} else {
+		InitializeProtocols()
+	}
 }
 
 func InitializeProtocols() {
@@ -107,7 +111,7 @@ func InitializeProtocols() {
 func findDNA(path string) (f string, err error) {
 	p := path + "/" + DNAFileName
 
-	Debugf("findDNA %v %v\n", path, p)
+	Debugf("findDNA %v %v", path, p)
 	matches, err := filepath.Glob(p + ".*")
 	if err != nil {
 		return
@@ -152,7 +156,7 @@ func (s *Service) Load(name string) (h *Holochain, err error) {
 }
 
 func (h *Holochain) mkChainDirs() (err error) {
-	//Debugf("Making chain dirs: %v, %v (%v)\n", h.DBPath(), h.DNAPath(), os.ModePerm)
+	//Debugf("Making chain dirs: %v, %v (%v)", h.DBPath(), h.DNAPath(), os.ModePerm)
 	if err = os.MkdirAll(h.DBPath(), os.ModePerm); err != nil {
 		return err
 	}
@@ -167,7 +171,7 @@ func (h *Holochain) mkChainDirs() (err error) {
 
 // NewHolochain creates a new holochain structure with a randomly generated ID and default values
 func NewHolochain(agent Agent, root string, format string) Holochain {
-	Debugf("NewHolochain root %v, format %v\n", root, format)
+	Debugf("NewHolochain root %v, format %v", root, format)
 	u, err := uuid.NewUUID()
 	if err != nil {
 		panic(err)
@@ -179,22 +183,21 @@ func NewHolochain(agent Agent, root string, format string) Holochain {
 		agent:           agent,
 		rootPath:        root,
 		encodingFormat:  format,
-		WireType:        WIRE_GOB,
 	}
 
 	// once the agent is set up we can calculate the id
-	Debug("Gen keys\n")
+	Debug("Gen keys")
 	h.id, err = peer.IDFromPrivateKey(agent.PrivKey())
 	if err != nil {
 		panic(err)
 	}
 
-	h.PrepareHashType()
+	h.prepareHashType()
 	return h
 }
 
-// DecodeDNA decodes a Holochain structure from an io.Reader
-func DecodeDNA(reader io.Reader, format string) (hP *Holochain, err error) {
+// decodeDNA decodes a Holochain structure from an io.Reader
+func decodeDNA(reader io.Reader, format string) (hP *Holochain, err error) {
 	var h Holochain
 	err = Decode(reader, format, &h)
 	if err != nil {
@@ -210,14 +213,14 @@ func DecodeDNA(reader io.Reader, format string) (hP *Holochain, err error) {
 func (s *Service) load(name string, format string) (hP *Holochain, err error) {
 
 	root := s.Path + "/" + name
-	Debugf("Service load: %v, %v p:%v\n", name, format, root)
+	Debugf("Service load: %v, %v p:%v", name, format, root)
 	var f *os.File
 	f, err = os.Open(root + "/" + ChainDNADir + "/" + DNAFileName + "." + format)
 	if err != nil {
 		return
 	}
 	defer f.Close()
-	h, err := DecodeDNA(f, format)
+	h, err := decodeDNA(f, format)
 	if err != nil {
 		return
 	}
@@ -255,7 +258,7 @@ func (s *Service) load(name string, format string) (hP *Holochain, err error) {
 		return
 	}
 
-	if err = h.PrepareHashType(); err != nil {
+	if err = h.prepareHashType(); err != nil {
 		return
 	}
 
@@ -279,7 +282,7 @@ func (s *Service) load(name string, format string) (hP *Holochain, err error) {
 	if h.chain.Length() > 0 {
 		h.agentHash = h.chain.Headers[1].EntryLink
 	}
-	if err = h.Prepare(); err != nil {
+	if err = h.prepare(); err != nil {
 		return
 	}
 
@@ -292,30 +295,17 @@ func (h *Holochain) Agent() Agent {
 	return h.agent
 }
 
-// PrepareHashType makes sure the given string is a correct multi-hash and stores
-// the code and length to the Holochain struct
-func (h *Holochain) PrepareHashType() (err error) {
-	c, ok := mh.Names[h.HashType]
-	Debugf("PrepareHashType[%v] %v\n", h.HashType, string(c))
-	if !ok {
-		return fmt.Errorf("Unknown hash type: %s", h.HashType)
-	}
-	h.HashSpec.Code = c
-	h.HashSpec.Length = -1
-	return
-}
-
 // Prepare sets up a holochain to run by:
 // validating the DNA, loading the schema validators, setting up a Network node and setting up the DHT
-func (h *Holochain) Prepare() (err error) {
+func (h *Holochain) prepare() (err error) {
 
-	Debug("Prepare\n")
+	Debug("Prepare")
 	if h.RequiresVersion > Version {
 		err = fmt.Errorf("Chain requires Holochain version %d", h.RequiresVersion)
 		return
 	}
 
-	if err = h.PrepareHashType(); err != nil {
+	if err = h.prepareHashType(); err != nil {
 		return
 	}
 	err = h.PrepareZomes(h.Zomes)
@@ -344,7 +334,7 @@ func (h *Holochain) Activate() (err error) {
 		}
 	}
 	if h.config.PeerModeAuthor {
-		if err = h.node.StartValidate(h); err != nil {
+		if err = h.node.startValidate(h); err != nil {
 			return
 		}
 	}
@@ -358,7 +348,7 @@ func (h *Holochain) UIPath() string {
 
 // DBPath returns a holochain DB path
 func (h *Holochain) DBPath() string {
-	//Debugf("dbpath %v\n", h.rootPath+"/"+ChainDataDir)
+	//Debugf("dbpath %v", h.rootPath+"/"+ChainDataDir)
 	return h.rootPath + "/" + ChainDataDir
 }
 
@@ -399,19 +389,14 @@ func (h *Holochain) Started() bool {
 // keys for signing.  See GenDev()
 func (h *Holochain) GenChain() (headerHash Hash, err error) {
 
-	Debug("GenChain\n")
+	Debug("GenChain")
 	if h.Started() {
 		err = mkErr("chain already started")
 		return
 	}
+	defer ErrorHandler(err, "")
 
-	defer func() {
-		if err != nil {
-			panic("cleanup after failed gen not implemented!  Error was: " + err.Error())
-		}
-	}()
-
-	if err = h.Prepare(); err != nil {
+	if err = h.prepare(); err != nil {
 		return
 	}
 
@@ -452,15 +437,15 @@ func (h *Holochain) GenChain() (headerHash Hash, err error) {
 		return
 	}
 
-	//Debugf("GenChain %v, %v\n", agentHeader, headerHash)
+	//Debugf("GenChain %v, %v", agentHeader, headerHash)
 	err = h.dht.SetupDHT()
 	if err != nil {
 		return
 	}
 
 	// run the init functions of each zome
-	for name, zome := range h.Zomes {
-		h.registerNucleus(name, &zome)
+	for _, zome := range h.Zomes {
+		h.registerNucleus(&zome)
 	}
 	return
 }
@@ -480,7 +465,7 @@ func (s *Service) Clone(clonedPath string, root string, new bool) (hP *Holochain
 			return
 		}
 		defer f.Close()
-		h, err := DecodeDNA(f, format)
+		h, err := decodeDNA(f, format)
 		if err != nil {
 			return
 		}
@@ -544,9 +529,9 @@ func (s *Service) Clone(clonedPath string, root string, new bool) (hP *Holochain
 			}
 		}
 
-		for zname, z := range h.Zomes {
+		for _, z := range h.Zomes {
 			var bs []byte
-			srczpath := srcDNAPath + "/" + zname
+			srczpath := srcDNAPath + "/" + z.Name
 			bs, err = readFile(srczpath, z.Code)
 			if err != nil {
 				return
@@ -561,9 +546,9 @@ func (s *Service) Clone(clonedPath string, root string, new bool) (hP *Holochain
 			for name, e := range z.Entries {
 				sc := e.Schema
 				if sc != "" {
-					Debugf("An entry %v, %v, %v\n", name, e, sc)
+					Debugf("An entry %v, %v, %v", name, e, sc)
 					if err = CopyFile(srczpath+"/"+sc, zpath+"/"+sc); err != nil {
-						Debugf("copy error %v\n", err)
+						Debugf("copy error %v", err)
 						return
 					}
 				}
@@ -696,7 +681,7 @@ func (h *Holochain) GenDNAHashes() (err error) {
 // NewEntry adds an entry and it's header to the chain and returns the header and it's hash
 func (h *Holochain) NewEntry(now time.Time, entryType string, entry Entry) (hash Hash, header *Header, err error) {
 	var l int
-	//Debugf("NewEntry %v, %v\n", now, entryType)
+	//Debugf("NewEntry %v, %v", now, entryType)
 	l, hash, header, err = h.PrepareHeader(now, entryType, entry, h.agent.PrivKey())
 	if err == nil {
 		err = h.addEntry(l, hash, header, entry)
@@ -755,12 +740,10 @@ func (h *Holochain) Validate(entriesToo bool) (valid bool, err error) {
 
 // GetEntryDef returns an EntryDef of the given name
 // @TODO this makes the incorrect assumption that entry type strings are unique across zomes
-func (holo *Holochain) GetEntryDef(entryType string) (zome *Zome, edef *EntryDef, err error) {
-	Debugf("GetEntryDef %v, $v\n")
-	zome, found := holo.zomeDefs[entryType]
-	if found {
-		edef, err = zome.GetEntryDef(entryType)
-	} else {
+func (holo *Holochain) GetEntryDef(entryType string) (edef *EntryDef, err error) {
+	Debugf("GetEntryDef %v, $v")
+	edef, found := holo.entryDefs[entryType]
+	if !found {
 		err = errors.New("Entry definition not found " + entryType)
 	}
 	return
@@ -774,24 +757,24 @@ func prepareSources(sources []peer.ID) (srcs []string) {
 	return
 }
 
-// ValidatePrepare does system level validation and structure creation before app validation
+// validatePrepare does system level validation and structure creation before app validation
 // It checks that entry is not nil, and that it conforms to the entry schema in the definition
 // It returns the entry definition and a nucleus vm object on which to call the app validation
-func (h *Holochain) ValidatePrepare(entryType string, entry Entry, sources []peer.ID) (d *EntryDef, srcs []string, n Nucleus, err error) {
+func (h *Holochain) validatePrepare(entryType string, entry Entry, sources []peer.ID) (def *EntryDef, srcs []string, nuc Nucleus, err error) {
 	if entry == nil {
 		err = errors.New("nil entry invalid")
 		return
 	}
 	var z *Zome
-	z, d, err = h.GetEntryDef(entryType)
+	def, err = h.GetEntryDef(entryType)
 	if err != nil {
 		return
 	}
 
 	// see if there is a schema validator for the entry type and validate it if so
-	if d.validator != nil {
+	if def.validator != nil {
 		var input interface{}
-		if d.DataFormat == DataFormatJSON {
+		if def.DataFormat == DataFormatJSON {
 			if err = json.Unmarshal([]byte(entry.Content().(string)), &input); err != nil {
 				return
 			}
@@ -799,10 +782,10 @@ func (h *Holochain) ValidatePrepare(entryType string, entry Entry, sources []pee
 			input = entry
 		}
 		Debugf("Validating %v against schema", input)
-		if err = d.validator.Validate(input); err != nil {
+		if err = def.validator.Validate(input); err != nil {
 			return
 		}
-	} else if d.DataFormat == DataFormatLinks {
+	} else if def.DataFormat == DataFormatLinks {
 		// Perform base validation on links entries, i.e. that all items exist and are of the right types
 		// so first unmarshall the json, and then check that the hashes are real.
 		var l struct{ Links []map[string]string }
@@ -845,8 +828,10 @@ func (h *Holochain) ValidatePrepare(entryType string, entry Entry, sources []pee
 	srcs = prepareSources(sources)
 
 	// then run the nucleus (ie. "app" specific) validation rules
-	n, err = h.NewNucleus(z.Name, z)
-	if err != nil {
+	nucObj, err := h.NewNucleus(def.zm)
+	if err == nil {
+		nuc = *nucObj
+	} else {
 		return
 	}
 
@@ -855,16 +840,14 @@ func (h *Holochain) ValidatePrepare(entryType string, entry Entry, sources []pee
 
 // ValidateCommit passes entry data to the chain's commit validation routine
 // If the entry is valid err will be nil, otherwise it will contain some information about why the validation failed (or, possibly, some other system error)
-func (h *Holochain) ValidateCommit(entryType string, entry Entry, header *Header, sources []peer.ID) (d *EntryDef, err error) {
-	var srcs []string
-	var n Nucleus
-	d, srcs, n, err = h.ValidatePrepare(entryType, entry, sources)
+func (h *Holochain) ValidateCommit(entryType string, entry Entry, header *Header, sources []peer.ID) (def *EntryDef, err error) {
+	def, srcs, n, err := h.validatePrepare(entryType, entry, sources)
 	if err != nil {
 		return
 	}
-	err = n.ValidateCommit(d, entry, header, srcs)
+	err = n.ValidateCommit(entryType, entry, header, srcs)
 	if err != nil {
-		Debugf("ValidateCommit err:%v\n", err)
+		Debugf("ValidateCommit err:%v", err)
 	}
 	return
 }
@@ -872,16 +855,16 @@ func (h *Holochain) ValidateCommit(entryType string, entry Entry, header *Header
 // ValidatePut passes entry data to the chain's put validation routine
 // If the entry is valid err will be nil, otherwise it will contain some information about why the validation failed (or, possibly, some other system error)
 func (h *Holochain) ValidatePut(entryType string, entry Entry, header *Header, sources []peer.ID) (err error) {
-	var d *EntryDef
+	var def *EntryDef
 	var srcs []string
 	var n Nucleus
-	d, srcs, n, err = h.ValidatePrepare(entryType, entry, sources)
+	def, srcs, n, err = h.validatePrepare(entryType, entry, sources)
 	if err != nil {
 		return
 	}
-	err = n.ValidatePut(d, entry, header, srcs)
+	err = n.ValidatePut(entryType, entry, header, srcs)
 	if err != nil {
-		Debugf("ValidatePut err:%v\n", err)
+		Debugf("ValidatePut err:%v", err)
 	}
 	return
 }
@@ -889,24 +872,24 @@ func (h *Holochain) ValidatePut(entryType string, entry Entry, header *Header, s
 // ValidateDel passes entry data to the chain's put validation routine
 // If the entry is valid err will be nil, otherwise it will contain some information about why the validation failed (or, possibly, some other system error)
 func (h *Holochain) ValidateDel(entryType string, hash string, sources []peer.ID) (err error) {
-	var z *Zome
-	var d *EntryDef
-	z, d, err = h.GetEntryDef(entryType)
+	def, err := h.GetEntryDef(entryType)
 	if err != nil {
 		return
 	}
 
 	// run the nucleus' validation rules
-	var n Nucleus
-	n, err = h.NewNucleus(z.Name, z)
-	if err != nil {
+	var nuc Nucleus
+	nucObj, err := h.NewNucleus(def.zm)
+	if err == nil {
+		nuc = *nucObj
+	} else {
 		return
 	}
 	srcs := prepareSources(sources)
-	err = n.ValidateDel(d, hash, srcs)
+	err = nuc.ValidateDel(entryType, hash, srcs)
 
 	if err != nil {
-		Debugf("ValidateDel err:%v\n", err)
+		Debugf("ValidateDel err:%v", err)
 	}
 	return
 }
@@ -915,48 +898,39 @@ func (h *Holochain) ValidateDel(entryType string, hash string, sources []peer.ID
 // If the link is valid err will be nil, otherwise it will contain some information about why the validation failed (or, possibly, some other system error)
 func (h *Holochain) ValidateLink(linkingEntryType string, base string, link string, tag string, sources []peer.ID) (err error) {
 
-	var z *Zome
-	var d *EntryDef
-	z, d, err = h.GetEntryDef(linkingEntryType)
+	var def *EntryDef
+	def, err = h.GetEntryDef(linkingEntryType)
 	if err != nil {
 		return
 	}
 
 	// run the nucleus (ie. "app" specific) validation rules
-	var n Nucleus
-	n, err = h.NewNucleus(z.Name, z)
-	if err != nil {
+	var nuc Nucleus
+	nucObj, err := h.NewNucleus(def.zm)
+	if err == nil {
+		nuc = *nucObj
+	} else {
 		return
 	}
 	srcs := prepareSources(sources)
-	err = n.ValidateLink(d, base, link, tag, srcs)
+	err = nuc.ValidateLink(linkingEntryType, base, link, tag, srcs)
 	if err != nil {
-		Debugf("ValidateLink err:%v\n", err)
+		Debugf("ValidateLink err:%v", err)
 	}
 	return
 }
 
 // Call executes an exposed function
-func (h *Holochain) Call(zomeType string, function string, arguments interface{}) (result interface{}, err error) {
-	n, z, err := h.MakeNucleus(zomeType)
+func (h *Holochain) Call(zomeType string, function string, arg NuclearData) (result NuclearData, err error) {
+	nuc, err := h.getNucleus(zomeType)
 	if err != nil {
 		return
 	}
-	Debugf("Call %v, %v, z\n", zomeType, function, z)
-	funcDef, err := h.GetFunctionDef(z, function)
+	Debugf("Call %v, %v", zomeType, function)
 	if err != nil {
-		result, err = n.Call(&funcDef, arguments)
+		//result, err = nuc.Call(function, arg)
+		result, err = nuc.Call(function, arg)
 	}
-	return
-}
-
-// MakeNucleus creates a Nucleus object based on the zome type
-func (h *Holochain) MakeNucleus(t string) (n Nucleus, z *Zome, err error) {
-	z, err = h.GetZome(t)
-	if err != nil {
-		return
-	}
-	n, err = h.NewNucleus(z.Name, z)
 	return
 }
 
@@ -966,30 +940,6 @@ func (h *Holochain) GetProperty(prop string) (property string, err error) {
 		ChangeAppProperty.Log()
 	} else {
 		property = h.Properties[prop]
-	}
-	return
-}
-
-// GetZome returns a zome structure given its name
-func (h *Holochain) GetZome(zName string) (z *Zome, err error) {
-	for _, zome := range h.Zomes {
-		if zome.Name == zName {
-			z = &zome
-			break
-		}
-	}
-	if z == nil {
-		err = errors.New("unknown zome: " + zName)
-		return
-	}
-	return
-}
-
-// GetFunctionDef returns the exposed function spec for the given zome and function
-func (h *Holochain) GetFunctionDef(zome *Zome, fnName string) (fdef FunctionDef, err error) {
-	fdef, found := zome.Functions[fnName]
-	if !found {
-		err = errors.New("unknown exposed function: " + fnName)
 	}
 	return
 }

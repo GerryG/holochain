@@ -124,6 +124,7 @@ func toString(input interface{}) string {
 // TestStringReplacements inserts special values into testing input and output values for matching
 func (h *Holochain) TestStringReplacements(input, r1, r2, r3 string, lastMatches *[3][]string) string {
 	// get the top 2 hashes for substituting for %h% and %h1% in the test expectation
+	Debugf("have chain %v", h.chain)
 	top := h.chain.Top().EntryLink
 	top1 := h.chain.Nth(1).EntryLink
 
@@ -289,7 +290,7 @@ func (h *Holochain) DoTest(name string, i int, t TestData, startTime time.Time, 
 			input = h.TestStringReplacements(input, r1, r2, r3, lastMatches)
 			Debugf("Input after replacement: %s", input)
 			//====================
-			var actualResult, actualError = h.Call(t.Zome, t.FnName, input)
+			var actualResult, actualError = h.Call(t.Zome, t.FnName, NewNuclearData(input))
 			var expectedResult, expectedError = t.Output, t.Err
 			var expectedResultRegexp = t.Regexp
 			//====================

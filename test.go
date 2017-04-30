@@ -2,7 +2,6 @@ package holochain
 
 import (
 	"bytes"
-	"fmt"
 	ic "github.com/libp2p/go-libp2p-crypto"
 	. "github.com/smartystreets/goconvey/convey"
 	"os"
@@ -40,9 +39,9 @@ func setupTestService() (cleanup func(), s *Service) {
 func genTestChain(n string) (cleanup func(), s *Service, h *Holochain) {
 	cleanup, s = setupTestService()
 	path := s.Path + "/" + n
-	Debug("Service up, GenDev next\n")
+	Debug("Service up, GenDev next")
 	h, err := s.GenDev(path, "toml")
-	Debug("GenDev done\n")
+	Debug("GenDev done")
 	if err != nil {
 		panic(err)
 	}
@@ -50,32 +49,28 @@ func genTestChain(n string) (cleanup func(), s *Service, h *Holochain) {
 }
 
 func prepareTestChain(n string) (cleanup func(), s *Service, h *Holochain) {
+	var err error
 	cleanup, s, h = genTestChain("test")
-	_, err := h.GenChain()
-	if err != nil {
-		panic(err)
+	defer ErrorHandlerf(err, "Error in prepareTestChain %v ", n)
+
+	if _, err = h.GenChain(); err != nil {
+		return
 	}
 	err = h.Activate()
-	if err != nil {
-		panic(err)
-	}
 	return
 }
 
 func setupTestDir() (dir string) {
 	dir = mkTestDirName()
 	err := os.MkdirAll(dir, os.ModePerm)
-	if err != nil {
-		panic(err)
-	}
+	defer ErrorHandlerf(err, "Error in setupTestDir %v ", dir)
 	return
 }
 
 func cleanupTestDir(path string) {
 	err := os.RemoveAll(path)
-	if err != nil {
-		panic(err)
-	}
+	defer ErrorHandlerf(err, "Error in cleanupTestDir %v ", path)
+	return
 }
 
 func ShouldLog(log *Logger, message string, fn func()) {
@@ -93,9 +88,9 @@ func ShouldLog(log *Logger, message string, fn func()) {
 func execCmd(cmd string, args ...string) {
 	out, err := exec.Command(cmd, args...).Output()
 	if err != nil {
-		fmt.Printf("exec error %v Cmd:%v A:%v\n", err, cmd, args)
+		Debugf("exec error %v Cmd:%v A:%v", err, cmd, args)
 	}
-	fmt.Print(string(out))
+	Debug(string(out))
 }
 
 func chainTestSetup(dir string) (holo *Holochain, hs HashType, key ic.PrivKey, now time.Time) {
@@ -105,9 +100,9 @@ func chainTestSetup(dir string) (holo *Holochain, hs HashType, key ic.PrivKey, n
 	if dir != "" {
 		hc.rootPath = dir + "/.holochain"
 	}
-	//Debugf("Use %v for rootPath\n", hc.rootPath)
+	//Debugf("Use %v for rootPath", hc.rootPath)
 	holo = &hc
-	holo.PrepareHashType()
+	holo.prepareHashType()
 	hs = holo.HashSpec
 	holo.mkChainDirs()
 	return

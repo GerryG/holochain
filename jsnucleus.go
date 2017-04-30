@@ -14,13 +14,16 @@ import (
 	"time"
 )
 
-const (
-	JSNucleusType = "js"
-)
-
 type JSNucleus struct {
-	vm         *otto.Otto
-	lastResult *otto.Value
+	GoNucleus
+}
+
+type JSNuclearData struct {
+	ptr *otto.Value
+}
+
+func (data *JSNuclearData) Value() {
+	data.(otto.Value)
 }
 
 // Type returns the string value under which this nucleus is registered
@@ -51,21 +54,21 @@ func (z *JSNucleus) ChainGenesis() (err error) {
 }
 
 // ValidateCommit checks the contents of an entry against the validation rules at commit time
-func (z *JSNucleus) ValidateCommit(def *EntryDef, entry Entry, header *Header, sources []string) (err error) {
-	err = z.validateEntry("validateCommit", def, entry, header, sources)
+func (z *JSNucleus) ValidateCommit(entryType string, entry Entry, header *Header, sources []string) (err error) {
+	err = z.validateEntry("validateCommit", entryType, entry, header, sources)
 	return
 }
 
 // ValidatePut checks the contents of an entry against the validation rules at DHT put time
-func (z *JSNucleus) ValidatePut(def *EntryDef, entry Entry, header *Header, sources []string) (err error) {
-	err = z.validateEntry("validatePut", def, entry, header, sources)
+func (z *JSNucleus) ValidatePut(entryType string, entry Entry, header *Header, sources []string) (err error) {
+	err = z.validateEntry("validatePut", entryType, entry, header, sources)
 	return
 }
 
 // ValidateDel checks that marking an entry as deleted is valid
-func (z *JSNucleus) ValidateDel(def *EntryDef, hash string, sources []string) (err error) {
+func (z *JSNucleus) ValidateDel(entryType string, hash string, sources []string) (err error) {
 	srcs := mkJSSources(sources)
-	code := fmt.Sprintf(`validateDel("%s","%s",%s)`, def.Name, hash, srcs)
+	code := fmt.Sprintf(`validateDel("%s","%s",%s)`, entryType, hash, srcs)
 	Debug(code)
 
 	err = z.runValidate("validateDel", code)
@@ -74,9 +77,9 @@ func (z *JSNucleus) ValidateDel(def *EntryDef, hash string, sources []string) (e
 }
 
 // ValidateLink checks the linking data against the validation rules
-func (z *JSNucleus) ValidateLink(def *EntryDef, baseHash string, linkHash string, tag string, sources []string) (err error) {
+func (z *JSNucleus) ValidateLink(entryType string, baseHash string, linkHash string, tag string, sources []string) (err error) {
 	srcs := mkJSSources(sources)
-	code := fmt.Sprintf(`validateLink("%s","%s","%s","%s",%s)`, def.Name, baseHash, linkHash, tag, srcs)
+	code := fmt.Sprintf(`validateLink("%s","%s","%s","%s",%s)`, entryType, baseHash, linkHash, tag, srcs)
 	Debug(code)
 
 	err = z.runValidate("validateLink", code)
@@ -88,9 +91,14 @@ func mkJSSources(sources []string) (srcs string) {
 	return
 }
 
-func (z *JSNucleus) prepareValidateEntryArgs(def *EntryDef, entry Entry, sources []string) (e string, srcs string, err error) {
+func (z *JSNucleus) prepareValidateEntryArgs(entryType string, entry Entry, sources []string) (e string, srcs string, err error) {
+	edef, err := z.hc.GetEntryDef(entryType)
+	if err != nil {
+		return
+	}
+	dataFormat := edef.DataFormat
 	c := entry.Content().(string)
-	switch def.DataFormat {
+	switch dataFormat {
 	case DataFormatRawJS:
 		e = c
 	case DataFormatString:
@@ -100,7 +108,7 @@ func (z *JSNucleus) prepareValidateEntryArgs(def *EntryDef, entry Entry, sources
 	case DataFormatJSON:
 		e = fmt.Sprintf(`JSON.parse("%s")`, jsSanitizeString(c))
 	default:
-		err = errors.New("data format not implemented: " + def.DataFormat)
+		err = errors.New("data format not implemented: " + dataFormat)
 		return
 	}
 	srcs = mkJSSources(sources)
@@ -108,10 +116,14 @@ func (z *JSNucleus) prepareValidateEntryArgs(def *EntryDef, entry Entry, sources
 }
 
 func (z *JSNucleus) runValidate(fnName string, code string) (err error) {
-	var v otto.Value
-	v, err = z.vm.Run(code)
+	data, err := z.vm.Run(code)
 	if err != nil {
 		err = fmt.Errorf("Error executing %s: %v", fnName, err)
+		return
+	}
+	v, err := *data.Value()
+	if err != nil {
+		err = fmt.Errorf("Error converting return value from %s: %v", fnName, err)
 		return
 	}
 	if v.IsBoolean() {
@@ -131,9 +143,9 @@ func (z *JSNucleus) runValidate(fnName string, code string) (err error) {
 	return
 }
 
-func (z *JSNucleus) validateEntry(fnName string, def *EntryDef, entry Entry, header *Header, sources []string) (err error) {
+func (z *JSNucleus) validateEntry(fnName string, entryType string, entry Entry, header *Header, sources []string) (err error) {
 
-	e, srcs, err := z.prepareValidateEntryArgs(def, entry, sources)
+	e, srcs, err := z.prepareValidateEntryArgs(entryType, entry, sources)
 	if err != nil {
 		return
 	}
@@ -145,7 +157,7 @@ func (z *JSNucleus) validateEntry(fnName string, def *EntryDef, entry Entry, hea
 		header.Time.UTC().Format(time.RFC3339),
 	)
 
-	code := fmt.Sprintf(`%s("%s",%s,%s,%s)`, fnName, def.Name, e, hdr, srcs)
+	code := fmt.Sprintf(`%s("%s",%s,%s,%s)`, fnName, entryType, e, hdr, srcs)
 	Debugf("%s: %s", fnName, code)
 	err = z.runValidate(fnName, code)
 	if err != nil && err == ValidationFailedErr {
@@ -168,155 +180,67 @@ func jsSanitizeString(s string) string {
 }
 
 // Call calls the zygo function that was registered with expose
-func (z *JSNucleus) Call(fn *FunctionDef, params interface{}) (result interface{}, err error) {
+func (z *JSNucleus) Call(function string, params interface{}) (result interface{}, err error) {
+	callingType := z.GetFunctionDef(function).CallingType
 	var code string
-	switch fn.CallingType {
+	switch CallingType {
 	case STRING_CALLING:
-		code = fmt.Sprintf(`%s("%s");`, fn.Name, jsSanitizeString(params.(string)))
+		code = fmt.Sprintf(`%s("%s");`, function, jsSanitizeString(params.(string)))
 	case JSON_CALLING:
 		if params.(string) == "" {
-			code = fmt.Sprintf(`JSON.stringify(%s());`, fn.Name)
+			code = fmt.Sprintf(`JSON.stringify(%s());`, function)
 		} else {
 			p := jsSanitizeString(params.(string))
-			code = fmt.Sprintf(`JSON.stringify(%s(JSON.parse("%s")));`, fn.Name, p)
+			code = fmt.Sprintf(`JSON.stringify(%s(JSON.parse("%s")));`, function, p)
 		}
 	default:
 		err = errors.New("params type not implemented")
 		return
 	}
 	Debugf("JS Call: %s", code)
-	var v otto.Value
-	v, err = z.vm.Run(code)
-	if err == nil {
-		if v.IsObject() && v.Class() == "Error" {
-			Debugf("JS Error:\n%v", v)
-			var message otto.Value
-			message, err = v.Object().Get("message")
-			if err == nil {
-				err = errors.New(message.String())
-			}
-		} else {
-			result, err = v.ToString()
+	goObj, err := z.vm.Run(code)
+	if err != nil {
+		return
+	}
+	v, err := goObj.(otto.Value)
+	if err != nil {
+		err = fmt.Errorf("Error converting return value from %s: %v", fnName, err)
+		return
+	}
+	if v.IsObject() && v.Class() == "Error" {
+		Debugf("JS Error:\n%v", v)
+		var message JSNuclearData
+		message, err = v.Object().Get("message")
+		if err == nil {
+			err = errors.New(message.String())
 		}
+	} else {
+		result, err = v.ToString()
 	}
 	return
 }
 
 // NewJSNucleus builds a javascript execution environment with user specified code
-func NewJSNucleus(h *Holochain, code string) (n Nucleus, err error) {
-	var z JSNucleus
-	z.vm = otto.New()
+func NewJSNucleus(holo *Holochain, code string) (n Nucleus, err error) {
+	var z = JSNucleus{vm: otto.New()}
 
-	err = z.vm.Set("property", func(call otto.FunctionCall) otto.Value {
-		prop, _ := call.Argument(0).ToString()
-
-		p, err := h.GetProperty(prop)
+	for fnName, jsFunc := range JSNucleusFuncs {
+		err = z.vm.Set(fnName, func(call otto.FunctionCall) JSNuclearData {
+			return z.vm.ToValue(jsFunc(call.ArgumentList))
+		})
 		if err != nil {
-			return otto.UndefinedValue()
-		}
-		result, _ := z.vm.ToValue(p)
-		return result
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	err = z.vm.Set("debug", func(call otto.FunctionCall) otto.Value {
-		msg, _ := call.Argument(0).ToString()
-		h.config.Loggers.App.p(msg)
-		return otto.UndefinedValue()
-	})
-
-	err = z.vm.Set("commit", func(call otto.FunctionCall) otto.Value {
-		entryType, _ := call.Argument(0).ToString()
-		var entry string
-		v := call.Argument(1)
-
-		if v.IsString() {
-			entry, _ = v.ToString()
-		} else if v.IsObject() {
-			v, _ = z.vm.Call("JSON.stringify", nil, v)
-			entry, _ = v.ToString()
-		} else {
-			return z.vm.MakeCustomError("HolochainError", "commit expected entry to be string or object (second argument)")
-		}
-		var entryHash Hash
-		entryHash, err = h.Commit(entryType, entry)
-		if err != nil {
-			return z.vm.MakeCustomError("HolochainError", err.Error())
-		}
-
-		result, _ := z.vm.ToValue(entryHash.String())
-		return result
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	err = z.vm.Set("get", func(call otto.FunctionCall) (result otto.Value) {
-		v := call.Argument(0)
-		var hashstr string
-
-		if v.IsString() {
-			hashstr, _ = v.ToString()
-		} else {
-			return z.vm.MakeCustomError("HolochainError", "get expected string as argument")
-		}
-
-		entry, err := h.Get(hashstr)
-		if err == nil {
-			t := entry.(*EntryObj)
-			result, err = z.vm.ToValue(t)
 			return
 		}
-
-		if err != nil {
-			result = z.vm.MakeCustomError("HolochainError", err.Error())
-			return
-		}
-		panic("Shouldn't get here!")
-	})
-	if err != nil {
-		return nil, err
 	}
-
-	err = z.vm.Set("getlink", func(call otto.FunctionCall) (result otto.Value) {
-		l := len(call.ArgumentList)
-		if l < 2 || l > 3 {
-			return z.vm.MakeCustomError("HolochainError", "expected 2 or 3 arguments to getlink")
-		}
-		base, _ := call.Argument(0).ToString()
-		tag, _ := call.Argument(1).ToString()
-		options := GetLinkOptions{Load: false}
-		if l == 3 {
-			v := call.Argument(2)
-			if v.IsObject() {
-				loadv, _ := v.Object().Get("Load")
-				if loadv.IsBoolean() {
-					load, _ := loadv.ToBoolean()
-					options.Load = load
-				}
-			} else {
-				return z.vm.MakeCustomError("HolochainError", "getlink expected options to be object (third argument)")
-			}
-		}
-
-		var response interface{}
-		response, err = h.GetLink(base, tag, options)
-		if err == nil {
-			result, err = z.vm.ToValue(response)
-		} else {
-			return z.vm.MakeCustomError("HolochainError", err.Error())
-		}
-
-		return
-	})
-	if err != nil {
-		return nil, err
-	}
-	l := JSLibrary
-	if h != nil {
-		l += fmt.Sprintf(`var App = {Name:"%s",DNA:{Hash:"%s"},Agent:{Hash:"%s",String:"%s"},Key:{Hash:"%s"}};`, h.Name, h.dnaHash, h.agentHash, h.Agent().Name(), peer.IDB58Encode(h.id))
+	if holo != nil {
+		l := fmt.Sprintf(
+			`%svar App = {Name:"%s",DNA:{Hash:"%s"},Agent:{Hash:"%s",String:"%s"},Key:{Hash:"%s"}};`,
+			JSLibrary,
+			holo.Name,
+			holo.dnaHash,
+			holo.agentHash,
+			holo.Agent().Name(),
+			peer.IDB58Encode(holo.id))
 	}
 	_, err = z.Run(l + code)
 	if err != nil {
@@ -326,8 +250,110 @@ func NewJSNucleus(h *Holochain, code string) (n Nucleus, err error) {
 	return
 }
 
+type JSFunc func(...otto.Value) (res interface{}, err error)
+
+var JSNucleusFuncs = map[string]JSFunc{
+	"property": property,
+	"debug":    debug,
+	"commit":   commit,
+	"get":      get,
+	"getlink":  getlink,
+}
+
+func property(args ...otto.Value) (prop JSNuclearData, err error) {
+	propName, _ := call.args[0].ToString()
+
+	prop, err = h.GetProperty(propName)
+	return
+}
+
+func debug(args ...otto.Value) (res JSNuclearData, err error) {
+	msg, _ := call.args[0].ToString()
+	h.config.Loggers.App.p(msg)
+	return otto.UndefinedValue()
+}
+
+func commit(args ...otto.Value) (res JSNuclearData, err error) {
+	entryType, _ := call.args[0].ToString()
+	var entry string
+	v := call.args[1]
+
+	if v.IsString() {
+		entry, _ = v.ToString()
+	} else if v.IsObject() {
+		v, _ = z.vm.Call("JSON.stringify", nil, v)
+		entry, _ = v.ToString()
+	} else {
+		err = errors.New("HolochainError: commit expected entry to be string or object (second argument)")
+		return
+	}
+	var entryHash Hash
+	entryHash, err = h.Commit(entryType, entry)
+	if err != nil {
+		return
+	}
+
+	res, _ = entryHash.String()
+	return
+}
+
+func get(args ...otto.Value) (res JSNuclearData, err error) {
+	var hashstr string
+
+	if v.IsString() {
+		hashstr, _ = v.ToString()
+	} else {
+		err = errors.New("get expected string as argument")
+		return
+	}
+
+	entry, err := h.Get(hashstr)
+	if err == nil {
+		result = entry.(*EntryObj)
+		return
+	}
+
+	if err != nil {
+		result = errors.New("HolochainError:" + err.Error())
+		return
+	}
+	panic("Shouldn't get here!")
+}
+
+func getlink(args ...otto.Value) (result JSNuclearData, err error) {
+	l := len(call.ArgumentList)
+	if l < 2 || l > 3 {
+		return z.vm.MakeCustomError("HolochainError", "expected 2 or 3 arguments to getlink")
+	}
+	base, _ := args[0].ToString()
+	tag, _ := call.args[1].ToString()
+	options := GetLinkOptions{Load: false}
+	if l == 3 {
+		v := call.args[2]
+		if v.IsObject() {
+			loadv, _ := v.Object().Get("Load")
+			if loadv.IsBoolean() {
+				load, _ := loadv.ToBoolean()
+				options.Load = load
+			}
+		} else {
+			return z.vm.MakeCustomError("HolochainError", "getlink expected options to be object (third argument)")
+		}
+	}
+
+	var response interface{}
+	response, err = h.GetLink(base, tag, options)
+	if err == nil {
+		result, err = z.vm.ToValue(response)
+	} else {
+		return z.vm.MakeCustomError("HolochainError", err.Error())
+	}
+
+	return
+}
+
 // Run executes javascript code
-func (z *JSNucleus) Run(code string) (result *otto.Value, err error) {
+func (z *JSNucleus) Run(code string) (result JSNuclearData, err error) {
 	v, err := z.vm.Run(code)
 	if err != nil {
 		err = errors.New("JS exec error: " + err.Error())
