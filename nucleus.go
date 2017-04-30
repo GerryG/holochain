@@ -69,11 +69,6 @@ type GoNucleus struct {
 	hc         *Holochain // If we need the zome, that index is store in Holochain
 }
 
-/*
-  The vitual machine interface
-*/
-type GoFunc func(...GoObj) (GoObj error)
-
 type NuclearData struct {
 	ptr GoObj // pointer type (C void *), Must implement GoObj methods.
 
@@ -85,6 +80,27 @@ type NuclearData struct {
 	 *       IsString, string(interface{}), ToString(), etc. for string
 	 */
 }
+
+func (data NuclearData) Value() (NuclearData, error) {
+	return data.ptr.Value()
+}
+
+func (ptr GoObj) Value() (res NuclearData, err error) {
+	switch v := ptr.(type) {
+	case otto.Value, string, bool:
+		res = v
+	default:
+		Debugf("Value def: %v\n", data.ptr)
+		err = errors.New("Type?")
+		return
+	}
+	return v, err
+}
+
+/*
+  The vitual machine interface
+*/
+type GoFunc func(...GoObj) (GoObj error)
 
 /*
  * When nucleus.vm isn't set (nil? we may need a special null vm value, or bind it do a
@@ -352,7 +368,11 @@ func goSanitizeString(s string) string {
 }
 
 func NewNuclearData(obj interface{}) NuclearData {
-	return NuclearData{ptr: &obj}
+	p := &obj
+	if obj.(otto.Value) {
+		p = obt
+	}
+	return NuclearData{ptr: obj}
 }
 
 // Call calls the zygo function that was registered with expose
