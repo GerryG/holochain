@@ -31,16 +31,6 @@ const Version int = 7
 // VersionStr is the textual version number of the holochain library
 const VersionStr string = "7"
 
-// Loggers holds the logging structures for the different parts of the system
-type Loggers struct {
-	App        Logger
-	DHT        Logger
-	Gossip     Logger
-	TestPassed Logger
-	TestFailed Logger
-	TestInfo   Logger
-}
-
 // Config holds the non-DNA configuration for a holo-chain
 type Config struct {
 	Port            int
@@ -73,29 +63,6 @@ type Holochain struct {
 	dht            *DHT
 	node           *Node
 	chain          *Chain // the chain itself
-}
-
-var debugLog Logger
-var infoLog Logger
-
-// Debug sends a string to the standard debug log
-func Debug(m string) {
-	debugLog.Log(m)
-}
-
-// Debugf sends a formatted string to the standard debug log
-func Debugf(m string, args ...interface{}) {
-	debugLog.Logf(m, args...)
-}
-
-// Info sends a string to the standard info log
-func Info(m string) {
-	infoLog.Log(m)
-}
-
-// Infof sends a formatted string to the standard info log
-func Infof(m string, args ...interface{}) {
-	infoLog.Logf(m, args...)
 }
 
 // Initialize function that must be called once at startup by any client app
