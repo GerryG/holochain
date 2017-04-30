@@ -19,14 +19,10 @@ type JSNucleus struct {
 	GoNucleus
 }
 
-type JSNuclearData struct {
-	ptr *otto.Value
-}
+type JSNuclearData NuclearData
 
-func (data *JSNuclearData) Value() {
-	data.(otto.Value)
-}
-
+//func (data *JSNuclearData) Value() (res JSNuclearData, err error) {
+//}
 // Type returns the string value under which this nucleus is registered
 func (z *JSNucleus) Type() string { return JSNucleusType }
 
@@ -168,7 +164,8 @@ func (z *JSNucleus) runValidate(fnName string, code string) (err error) {
 		err = fmt.Errorf("Error executing %s: %v", fnName, err)
 		return
 	}
-	v, err := *data.Value()
+	data = NewNuclearData(data)
+	v, err := data.Value()
 	if err != nil {
 		err = fmt.Errorf("Error converting return value from %s: %v", fnName, err)
 		return
