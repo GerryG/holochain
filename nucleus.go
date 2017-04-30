@@ -45,17 +45,17 @@ const (
 
 // Nucleus type abstracts the functions of code execution environments
 type Nucleus interface {
-	Type()                                 string
+	Type() string
 	ValidateCommit(string, Entry,
-		*Header, []string)             error // entry, hash, header, sources
+		*Header, []string) error // entry, hash, header, sources
 	ValidatePut(string, Entry,
-		*Header, []string)             error // entry, hash, header, sources
-	ValidateDel(string, string, []string)  error // entry, hash, sources
+		*Header, []string) error // entry, hash, header, sources
+	ValidateDel(string, string, []string) error // entry, hash, sources
 	ValidateLink(string, string, string,
-                   string, []string)           error // entryType, baseHash, linkHash, tag, sources
-	GetEntryDef(string)                    *EntryDef // entryType
-	ChainGenesis()                         error
-	Call(string, ...NuclearData)           (NuclearData, error) // function, params -> res, err
+		string, []string) error // entryType, baseHash, linkHash, tag, sources
+	GetEntryDef(string) *EntryDef // entryType
+	ChainGenesis() error
+	Call(string, ...NuclearData) (NuclearData, error) // function, params -> res, err
 }
 
 /*
@@ -65,8 +65,8 @@ type Nucleus interface {
 type GoNucleus struct {
 	vm         VmType
 	lastResult NuclearData
-	zm         *Zome                // one nucleus per zome
-	hc         *Holochain           // If we need the zome, that index is store in Holochain
+	zm         *Zome      // one nucleus per zome
+	hc         *Holochain // If we need the zome, that index is store in Holochain
 }
 
 /*
@@ -75,7 +75,7 @@ type GoNucleus struct {
 type GoFunc func(...GoObj) (GoObj error)
 
 type NuclearData struct {
-	ptr  GoObj	// pointer type (C void *), Must implement GoObj methods.
+	ptr GoObj // pointer type (C void *), Must implement GoObj methods.
 
 	/* It gets it's underlying type when you assign it a value and tell the go
 	 * compiler what kind of pointer is being assigned. This is all compile time.
@@ -113,20 +113,20 @@ type NuclearData struct {
  * suitable, use methods in the shared interface defined to the subtypes (go overloading).
  */
 type VmType interface {
-	Run(string)          (NuclearData, error)
-	Set(string, GoFunc)  error
-	Call(string, ...GoObj) (NuclearData, error) 
+	Run(string) (NuclearData, error)
+	Set(string, GoFunc) error
+	Call(string, ...GoObj) (NuclearData, error)
 }
 
 type GoObj interface {
-        Value(string) (NuclearData, error)
+	Value(string) (NuclearData, error)
 }
 
 func (in string) Get() NuclearData {
 	var new NuclearData
 	new = NuclearData{obj: in}
 	return &new
-	
+
 	return
 }
 
@@ -139,7 +139,7 @@ func (res NuclearData) ToObject() GoObj {
 }
 
 func (obj NuclearData) IsBoolean() (ok bool) {
-	_, ok = obj.(bool);
+	_, ok = obj.(bool)
 	return
 }
 
@@ -147,18 +147,17 @@ func (obj NuclearData) ToBoolean() (res bool, err error) {
 	return res.(boolean)
 }
 
-func (obj NuclearData) IsString()  bool {
-	_, ok = obj.(string);
+func (obj NuclearData) IsString() bool {
+	_, ok = obj.(string)
 	return
 }
 
-func (obj NuclearData) ToString()  (res string, err error) {
+func (obj NuclearData) ToString() (res string, err error) {
 	res, ok = obj.(string)
 	if !ok {
 		err = error.New("not a string")
 	}
 	return
->>>>>>> Stashed changes
 }
 
 func (obj NuclearData) Class() (res string) {
@@ -277,7 +276,7 @@ func (z *GoNucleus) ValidateLink(linkingEntryType string, baseHash string, linkH
 	return
 }
 
-func (z *GoNucleus) GetEntryDef(entryType string) (def *EntryDef){
+func (z *GoNucleus) GetEntryDef(entryType string) (def *EntryDef) {
 	z.Ent
 }
 
@@ -353,7 +352,7 @@ func goSanitizeString(s string) string {
 }
 
 func NewNuclearData(obj interface{}) NuclearData {
-	return NuclearData { ptr: &obj }
+	return NuclearData{ptr: &obj}
 }
 
 // Call calls the zygo function that was registered with expose
@@ -448,7 +447,7 @@ func NewGoNucleus(holo *Holochain, code string) (n Nucleus, err error) {
 			hashstr = v.(string)
 		} else {
 			err = errors.New("HolochainError get expected string as argument")
-			return 
+			return
 		}
 
 		entry, err := holo.Get(hashstr)
@@ -501,7 +500,7 @@ func NewGoNucleus(holo *Holochain, code string) (n Nucleus, err error) {
 	}
 
 	/* DNA info for the Nucleus, not sure we need anything here, we have the holo object
-	   The 'code' should be empty, it could pass a func() bool, etc as GoObj 
+	   The 'code' should be empty, it could pass a func() bool, etc as GoObj
 	if holo != nil {
 		f := `var App = {Name:"%s",DNA:{Hash:"%s"},Agent:{Hash:"%s",String:"%s"},Key:{Hash:"%s"}};`
 		l += fmt.Sprintf(f, holo.Name, holo.dnaHash, holo.agentHash, holo.Agent().Name(),
@@ -521,4 +520,3 @@ func (z *GoNucleus) Run(code string) (result GoObj, err error) {
 	   code from a function pointer if we use it at all */
 	Panix("GoNucleus Run not implemented")
 }
-
