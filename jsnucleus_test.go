@@ -25,8 +25,8 @@ func TestNewJSNucleus(t *testing.T) {
 
 	tzm.code = ""
 	Convey("it should have an App structure:", t, func() {
-		d, _, h := prepareTestChain("test")
-		defer cleanupTestDir(d)
+		h, cleanup, _, _ := setupTestChainDir()
+		defer cleanup()
 
 		v, err := NewJSNucleus(h, &tzm)
 		So(err, ShouldBeNil)
@@ -60,8 +60,8 @@ func TestNewJSNucleus(t *testing.T) {
 	})
 
 	Convey("it should have an HC structure:", t, func() {
-		d, _, h := prepareTestChain("test")
-		defer cleanupTestDir(d)
+		h, cleanup, _, _ := setupTestChainDir()
+		defer cleanup()
 
 		v, err := NewJSNucleus(h, &tzm)
 		So(err, ShouldBeNil)
@@ -74,8 +74,8 @@ func TestNewJSNucleus(t *testing.T) {
 	})
 
 	Convey("should have the built in functions:", t, func() {
-		d, _, h := prepareTestChain("test")
-		defer cleanupTestDir(d)
+		h, cleanup, _, _ := setupTestChainDir()
+		defer cleanup()
 
 		v, err := NewJSNucleus(h, &tzm)
 		So(err, ShouldBeNil)
@@ -244,8 +244,8 @@ func TestJSSanitize(t *testing.T) {
 }
 
 func TestJSExposeCall(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	zome, _ := h.GetZome("jsSampleZome")
 	v, err := h.makeNucleus(zome)
@@ -291,8 +291,8 @@ func TestJSExposeCall(t *testing.T) {
 }
 
 func TestJSDHT(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	tzm := Zome{}
 
 	hash, _ := NewHash("QmY8Mzg9F69e5P9AoQPYat6x5HEhc1TVGs11tmfNSzkqh2")

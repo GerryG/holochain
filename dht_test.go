@@ -10,8 +10,8 @@ import (
 )
 
 func TestNewDHT(t *testing.T) {
-	d := setupTestDir()
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	var h Holochain
 	h.rootPath = d
 	os.MkdirAll(h.DBPath(), os.ModePerm)
@@ -24,8 +24,8 @@ func TestNewDHT(t *testing.T) {
 }
 
 func TestSetupDHT(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	err := h.dht.SetupDHT()
 	Convey("it should add the holochain ID to the DHT", t, func() {
@@ -66,8 +66,8 @@ func TestSetupDHT(t *testing.T) {
 }
 
 func TestPutGet(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	dht := h.dht
 	var id = h.id
@@ -92,8 +92,8 @@ func TestPutGet(t *testing.T) {
 }
 
 func TestLinking(t *testing.T) {
-	d := setupTestDir()
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	var h Holochain
 	h.rootPath = d
 	os.MkdirAll(h.DBPath(), os.ModePerm)
@@ -182,8 +182,8 @@ func TestLinking(t *testing.T) {
 }
 
 func TestDel(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	dht := h.dht
 	var id = h.id
@@ -211,8 +211,8 @@ func TestDel(t *testing.T) {
 }
 
 func TestFindNodeForHash(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	Convey("It should find a node", t, func() {
 
@@ -229,8 +229,8 @@ func TestFindNodeForHash(t *testing.T) {
 }
 
 func TestSend(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	node, err := NewNode("/ip4/127.0.0.1/tcp/1234", h.id, h.Agent().PrivKey())
 	if err != nil {
@@ -273,8 +273,8 @@ func TestSend(t *testing.T) {
 }
 
 func TestDHTReceiver(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	Convey("PUT_REQUEST should fail if body isn't a hash", t, func() {
 		m := h.node.NewMessage(PUT_REQUEST, "foo")
@@ -384,8 +384,8 @@ func TestDHTReceiver(t *testing.T) {
 
 /*
 func TestHandleChangeReqs(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	now := time.Unix(1, 1) // pick a constant time so the test will always work
 	e := GobEntry{C: "{\"prime\":7}"}

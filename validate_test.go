@@ -8,8 +8,8 @@ import (
 )
 
 func TestValidateReceiver(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := setupTestChain()
+	defer cleanup()
 
 	Convey("VALIDATE_PUT_REQUEST should fail if  body isn't a ValidateQuery", t, func() {
 		m := h.node.NewMessage(VALIDATE_PUT_REQUEST, "fish")

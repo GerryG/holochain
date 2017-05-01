@@ -2,8 +2,10 @@ package holochain
 
 import (
 	"bytes"
+	ic "github.com/libp2p/go-libp2p-crypto"
 	. "github.com/smartystreets/goconvey/convey"
 	"os"
+	"os/exec"
 	"strconv"
 	"time"
 )
@@ -16,14 +18,18 @@ func Panix(on string) {
 	}
 }
 
-func mkTestDirName() string {
-	t := time.Now()
-	d := "/tmp/holochain_test" + strconv.FormatInt(t.Unix(), 10) + "." + strconv.Itoa(t.Nanosecond())
-	return d
+func testDir(tm time.Time) string {
+	return "/tmp/holochain_test" + strconv.FormatInt(tm.Unix(), 10) +
+		 "." + strconv.Itoa(tm.Nanosecond())
 }
 
-func setupTestService() (d string, s *Service) {
-	d = mkTestDirName()
+func mkTestDirName() string {
+	return testDir(time.Now())
+}
+
+func setupTestService() (cleanup func(), s *Service) {
+	d := mkTestDirName()
+	cleanup = func() { cleanupTestDir(d) }
 	agent := AgentName("Herbert <h@bert.com>")
 	s, err := Init(d+"/"+DefaultDirectoryName, agent)
 	s.Settings.DefaultBootstrapServer = "localhost:3142"
@@ -33,46 +39,41 @@ func setupTestService() (d string, s *Service) {
 	return
 }
 
-func setupTestChain(n string) (d string, s *Service, h *Holochain) {
-	d, s = setupTestService()
+func genTestChain(n string) (cleanup func(), s *Service, h *Holochain) {
+	cleanup, s = setupTestService()
 	path := s.Path + "/" + n
-	Debugf("setupTestService %v, %v, %s", d, s, path)
+	Debug("Service up, GenDev next")
 	h, err := s.GenDev(path, "toml")
+	Debug("GenDev done")
 	if err != nil {
 		panic(err)
 	}
 	return
 }
 
-func prepareTestChain(n string) (d string, s *Service, h *Holochain) {
-	d, s, h = setupTestChain("test")
-	Debugf("prepareTestChain %v, %v, %v", d, s, h)
-	_, err := h.GenChain()
-	Debugf("pTC GC %v", err)
-	if err != nil {
-		panic(err)
+func prepareTestChain(n string) (cleanup func(), s *Service, h *Holochain) {
+	var err error
+	cleanup, s, h = genTestChain("test")
+	defer ErrorHandlerf(err, "Error in prepareTestChain %v ", n)
+
+	if _, err = h.GenChain(); err != nil {
+		return
 	}
 	err = h.Activate()
-	if err != nil {
-		panic(err)
-	}
 	return
 }
 
-func setupTestDir() string {
-	d := mkTestDirName()
-	err := os.MkdirAll(d, os.ModePerm)
-	if err != nil {
-		panic(err)
-	}
-	return d
+func setupTestDir() (dir string) {
+	dir = mkTestDirName()
+	err := os.MkdirAll(dir, os.ModePerm)
+	defer ErrorHandlerf(err, "Error in setupTestDir %v ", dir)
+	return
 }
 
 func cleanupTestDir(path string) {
 	err := os.RemoveAll(path)
-	if err != nil {
-		panic(err)
-	}
+	defer ErrorHandlerf(err, "Error in cleanupTestDir %v ", path)
+	return
 }
 
 func ShouldLog(log *Logger, message string, fn func()) {
@@ -85,4 +86,37 @@ func ShouldLog(log *Logger, message string, fn func()) {
 	So(buf.String(), ShouldEqual, message)
 	log.Enabled = e
 	log.w = w
+}
+
+func execCmd(cmd string, args ...string) {
+	out, err := exec.Command(cmd, args...).Output()
+	if err != nil {
+		Debugf("exec error %v Cmd:%v A:%v", err, cmd, args)
+	}
+	Debug(string(out))
+}
+
+func chainTestSetup(dir string) (holo *Holochain, hs HashSpec, key ic.PrivKey, now time.Time) {
+	a, _ := NewAgent(IPFS, "agent id")
+	key = a.PrivKey()
+	hc := Holochain{HashType: HASH_SHA}
+	if dir != "" {
+		hc.rootPath = dir + "/.holochain"
+	}
+	Debugf("Use %v for rootPath", hc.rootPath)
+	holo = &hc
+	hc.PrepareHashType()
+	hs = hc.hashSpec
+	hc.mkChainDirs()
+	return
+}
+
+func setupTestChainDir() (holo *Holochain, cleanup func(), key ic.PrivKey, now time.Time) {
+	dir := setupTestDir()
+	cleanup = func() { cleanupTestDir(dir) }
+	holo, _, key, now = chainTestSetup(dir)
+	if _, err := NewChainFromFile(holo); err != nil {
+		Debugf("Test setup, NewChainFromFile for dir %v failed %v", dir, err)
+	}
+	return
 }

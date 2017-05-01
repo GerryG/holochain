@@ -24,8 +24,8 @@ func TestNewZygoNucleus(t *testing.T) {
 	})
 
 	Convey("it should have an App structure:", t, func() {
-		d, _, h := prepareTestChain("test")
-		defer cleanupTestDir(d)
+		cleanup, _, h := setupTestChain()
+		defer cleanup()
 
 		tzm.code = ""
 		v, err := NewZygoNucleus(h, &tzm)
@@ -57,8 +57,8 @@ func TestNewZygoNucleus(t *testing.T) {
 	})
 
 	Convey("it should have an App structure:", t, func() {
-		d, _, h := prepareTestChain("test")
-		defer cleanupTestDir(d)
+		cleanup, _, h := setupTestChain()
+		defer cleanup()
 
 		v, err := NewZygoNucleus(h, &tzm)
 		So(err, ShouldBeNil)
@@ -71,8 +71,8 @@ func TestNewZygoNucleus(t *testing.T) {
 	})
 
 	Convey("should have the built in functions:", t, func() {
-		d, _, h := prepareTestChain("test")
-		defer cleanupTestDir(d)
+		cleanup, _, h := setupTestChain()
+		defer cleanup()
 
 		v, err := NewZygoNucleus(h, &tzm)
 		So(err, ShouldBeNil)
@@ -257,8 +257,8 @@ func TestZySanitize(t *testing.T) {
 }
 
 func TestZygoExposeCall(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := setupTestChain()
+	defer cleanup()
 
 	zome, _ := h.GetZome("zySampleZome")
 	v, err := h.makeNucleus(zome)
@@ -293,8 +293,8 @@ func TestZygoExposeCall(t *testing.T) {
 }
 
 func TestZygoDHT(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, _, h := setupTestChain()
+	defer cleanup()
 	tzm := Zome{}
 
 	hash, _ := NewHash("QmY8Mzg9F69e5P9AoQPYat6x5HEhc1TVGs11tmfNSzkqh2")

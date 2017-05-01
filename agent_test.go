@@ -7,8 +7,8 @@ import (
 )
 
 func TestAgent(t *testing.T) {
-	d := setupTestDir()
-	defer cleanupTestDir(d)
+	dir := setupTestDir()
+	defer cleanupTestDir(dir)
 	a := AgentName("zippy@someemail.com")
 
 	Convey("it should fail to create an agent with an unknown key type", t, func() {

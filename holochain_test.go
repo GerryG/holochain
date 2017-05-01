@@ -65,8 +65,8 @@ func TestPrepare(t *testing.T) {
 
 	})
 	Convey("it should return no err if the requires version is correct", t, func() {
-		d, _, h := setupTestChain("test")
-		defer cleanupTestDir(d)
+		h, cleanup, _, _ := setupTestChainDir()
+		defer cleanup()
 		h.RequiresVersion = Version
 		err := h.Prepare()
 		So(err, ShouldBeNil)
@@ -100,8 +100,8 @@ func TestPrepareHashType(t *testing.T) {
 }
 
 func TestGenDev(t *testing.T) {
-	d, s := setupTestService()
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	name := "test"
 	root := s.Path + "/" + name
 
@@ -146,8 +146,8 @@ func TestGenDev(t *testing.T) {
 }
 
 func TestCloneNew(t *testing.T) {
-	d, s, h0 := setupTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	name := "test2"
 	root := s.Path + "/" + name
@@ -181,8 +181,8 @@ func TestCloneNew(t *testing.T) {
 }
 
 func TestCloneJoin(t *testing.T) {
-	d, s, h0 := setupTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	name := "test2"
 	root := s.Path + "/" + name
@@ -208,8 +208,8 @@ func TestCloneJoin(t *testing.T) {
 }
 
 func TestNewEntry(t *testing.T) {
-	d, s := setupTestService()
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	n := "test"
 	path := s.Path + "/" + n
 	h, err := s.GenDev(path, "toml")
@@ -317,8 +317,8 @@ func TestHeader(t *testing.T) {
 }
 
 func TestGenChain(t *testing.T) {
-	d, _, h := setupTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	var err error
 	Convey("Generating DNA Hashes should re-save the DNA file", t, func() {
 		err = h.GenDNAHashes()
@@ -385,8 +385,8 @@ func TestGenChain(t *testing.T) {
 }
 
 func TestWalk(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	// add an extra link onto the chain
 	entryTypeFoo := `(message (from "art") (to "eric") (contents "test"))`
@@ -416,8 +416,8 @@ func TestWalk(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	// add an extra link onto the chain
 	entryTypeFoo := `(message (from "art") (to "eric") (contents "test"))`
@@ -436,8 +436,8 @@ func TestValidate(t *testing.T) {
 }
 
 func TestGetZome(t *testing.T) {
-	d, _, h := setupTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	Convey("it should fail if the zome isn't defined in the DNA", t, func() {
 		_, err := h.GetZome("bogusZome")
 		So(err.Error(), ShouldEqual, "unknown zome: bogusZome")
@@ -450,8 +450,8 @@ func TestGetZome(t *testing.T) {
 }
 
 func TestGetFunctionDef(t *testing.T) {
-	d, _, h := setupTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	z, _ := h.GetZome("zySampleZome")
 
 	Convey("it should fail if the fn isn't defined in the DNA", t, func() {
@@ -466,8 +466,8 @@ func TestGetFunctionDef(t *testing.T) {
 }
 
 func TestMakeNucleus(t *testing.T) {
-	d, _, h := setupTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	Convey("it should fail if the zome isn't defined in the DNA", t, func() {
 		_, _, err := h.MakeNucleus("bogusZome")
 		So(err.Error(), ShouldEqual, "unknown zome: bogusZome")
@@ -483,8 +483,8 @@ func TestMakeNucleus(t *testing.T) {
 }
 
 func TestCall(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	Convey("it should call the exposed function", t, func() {
 		result, err := h.Call("zySampleZome", "testStrFn1", "arg1 arg2")
 		So(err, ShouldBeNil)
@@ -502,8 +502,8 @@ func TestCall(t *testing.T) {
 }
 
 func TestLoadTestFiles(t *testing.T) {
-	d, _, h := setupTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	Convey("it should fail if there's no test data", t, func() {
 		tests, err := LoadTestFiles(d)
@@ -521,8 +521,8 @@ func TestLoadTestFiles(t *testing.T) {
 }
 
 func TestCommit(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	// add an entry onto the chain
 	hash := commit(h, "oddNumbers", "7")

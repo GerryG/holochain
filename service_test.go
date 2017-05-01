@@ -7,8 +7,8 @@ import (
 )
 
 func TestInit(t *testing.T) {
-	d := setupTestDir()
-	defer cleanupTestDir(d)
+	cleanup, _ := setupTestService()
+	defer cleanup()
 
 	Convey("we can detect an uninitialized directory", t, func() {
 		So(IsInitialized(d+"/"+DefaultDirectoryName), ShouldBeFalse)
@@ -45,9 +45,9 @@ func TestInit(t *testing.T) {
 }
 
 func TestLoadService(t *testing.T) {
-	d, service := setupTestService()
+	cleanup, service, h := setupTestChain()
+	defer cleanup()
 	root := service.Path
-	defer cleanupTestDir(d)
 	Convey("loading service from disk should set up the struct", t, func() {
 		s, err := LoadService(root)
 		So(err, ShouldEqual, nil)
@@ -77,8 +77,8 @@ func TestValidateServiceConfig(t *testing.T) {
 }
 
 func TestConfiguredChains(t *testing.T) {
-	d, s, h := setupTestChain("test")
-	defer cleanupTestDir(d)
+	cleanup, s, h := setupTestChain()
+	defer cleanup()
 
 	Convey("Configured chains should return a hash of all the chains in the Service", t, func() {
 		chains, err := s.ConfiguredChains()

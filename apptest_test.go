@@ -7,8 +7,8 @@ import (
 )
 
 func TestTestStringReplacements(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	var lastMatches = [3][]string{{"complete match", "1st submatch", "2nd submatch"}}
 
 	Convey("it should replace %dna%", t, func() {
@@ -26,8 +26,8 @@ func TestTestStringReplacements(t *testing.T) {
 }
 
 func TestTest(t *testing.T) {
-	d, _, h := setupTestChain("test")
-	cleanupTestDir(d + "/.holochain/test/test/") // delete the test data created by gen dev
+	h, cleanup, _, _ := setupTestChainDir()
+	cleanup() // run cleanup before to be sure it isn't there
 	if os.Getenv("DEBUG") != "1" {
 		h.config.Loggers.TestPassed.Enabled = false
 		h.config.Loggers.TestFailed.Enabled = false
@@ -37,10 +37,9 @@ func TestTest(t *testing.T) {
 		err := h.Test()
 		So(err[0].Error(), ShouldEqual, "open "+h.rootPath+"/"+ChainTestDir+": no such file or directory")
 	})
-	cleanupTestDir(d)
 
-	d, _, h = setupTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	if os.Getenv("DEBUG") != "1" {
 		h.config.Loggers.TestPassed.Enabled = false
 		h.config.Loggers.TestFailed.Enabled = false

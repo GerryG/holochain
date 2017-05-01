@@ -31,6 +31,10 @@ const Version int = 7
 // VersionStr is the textual version number of the holochain library
 const VersionStr string = "7"
 
+const (
+	HASH_SHA = "sha2-256"
+)
+
 // Config holds the non-DNA configuration for a holo-chain
 type Config struct {
 	Port            int
@@ -173,7 +177,7 @@ func NewHolochain(agent Agent, root string, format string) Holochain {
 	}
 	h := Holochain{
 		ID:              u,
-		HashType:        "sha2-256",
+		HashType:        HASH_SHA,
 		RequiresVersion: Version,
 		agent:           agent,
 		rootPath:        root,
@@ -255,7 +259,7 @@ func (s *Service) load(name string, format string) (hP *Holochain, err error) {
 		return
 	}
 
-	h.chain, err = NewChainFromFile(h.hashSpec, h.DBPath()+"/"+StoreFileName)
+	h.chain, err = NewChainFromFile(h)
 	if err != nil {
 		return
 	}
@@ -645,7 +649,7 @@ func gen(root string, makeH func(root string) (hP *Holochain, err error)) (h *Ho
 		return nil, err
 	}
 
-	h.chain, err = NewChainFromFile(h.hashSpec, h.DBPath()+"/"+StoreFileName)
+	h.chain, err = NewChainFromFile(h)
 	if err != nil {
 		return nil, err
 	}
@@ -904,7 +908,7 @@ func (h *Holochain) Reset() (err error) {
 	if err = os.MkdirAll(h.DBPath(), os.ModePerm); err != nil {
 		return
 	}
-	h.chain, err = NewChainFromFile(h.hashSpec, h.DBPath()+"/"+StoreFileName)
+	h.chain, err = NewChainFromFile(h)
 	if err != nil {
 		return
 	}

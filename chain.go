@@ -34,6 +34,7 @@ type Chain struct {
 	//---
 
 	s *os.File // if this stream is not nil, new entries will get marshaled to it
+	hc	*Holochain
 }
 
 // NewChain creates and empty chain
@@ -52,7 +53,7 @@ func NewChain() (chain *Chain) {
 
 // NewChainFromFile creates a chain from a file, loading any data there,
 // and setting it to be persisted to. If no file exists it will be created.
-func NewChainFromFile(h HashSpec, path string) (c *Chain, err error) {
+func NewChainFromFile(hc *Holochain) (c *Chain, err error) {
 	defer func() {
 		if err != nil {
 			Debugf("error loading chain :%s", err.Error())
@@ -60,6 +61,7 @@ func NewChainFromFile(h HashSpec, path string) (c *Chain, err error) {
 	}()
 	c = NewChain()
 
+	path := hc.DBPath()+"/"+StoreFileName
 	var f *os.File
 	if fileExists(path) {
 		f, err = os.Open(path)
@@ -90,7 +92,7 @@ func NewChainFromFile(h HashSpec, path string) (c *Chain, err error) {
 			var hash Hash
 
 			// hash the header
-			hash, _, err = hd.Sum(h)
+			hash, _, err = hd.Sum(hc.hashSpec)
 			if err != nil {
 				return
 			}
@@ -117,6 +119,7 @@ func NewChainFromFile(h HashSpec, path string) (c *Chain, err error) {
 		}
 	}
 	c.s = f
+	c.hc = hc
 	return
 }
 

@@ -80,8 +80,8 @@ func TestNewMessage(t *testing.T) {
 }
 
 func TestNodeSend(t *testing.T) {
-	d := setupTestDir()
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	node1, err := makeNode(1234, "node1")
 	if err != nil {

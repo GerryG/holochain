@@ -15,8 +15,9 @@ func TestAction(t *testing.T) {
 }
 
 func TestValidateAction(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	//holo, cleanup, key, now := setupTestChainDir()
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 	var err error
 
 	// these test the generic properties of ValidateAction using a commit action as an example
@@ -44,8 +45,8 @@ func TestValidateAction(t *testing.T) {
 }
 
 func TestSysValidateEntry(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	Convey("a nil entry is invalid", t, func() {
 		err := sysValidateEntry(h, nil, nil)

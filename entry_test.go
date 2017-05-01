@@ -37,8 +37,8 @@ func TestJSONEntry(t *testing.T) {
 }
 
 func TestJSONSchemaValidator(t *testing.T) {
-	d, _ := setupTestService()
-	defer cleanupTestDir(d)
+	h, cleanup, _, _ := setupTestChainDir()
+	defer cleanup()
 
 	schema := `{
 	"title": "Profile Schema",
