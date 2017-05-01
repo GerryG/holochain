@@ -33,8 +33,8 @@ type Chain struct {
 
 	//---
 
-	s *os.File // if this stream is not nil, new entries will get marshaled to it
-	hc	*Holochain
+	s  *os.File // if this stream is not nil, new entries will get marshaled to it
+	hc *Holochain
 }
 
 // NewChain creates and empty chain
@@ -61,7 +61,7 @@ func NewChainFromFile(hc *Holochain) (c *Chain, err error) {
 	}()
 	c = NewChain()
 
-	path := hc.DBPath()+"/"+StoreFileName
+	path := hc.DBPath() + "/" + StoreFileName
 	var f *os.File
 	if fileExists(path) {
 		f, err = os.Open(path)

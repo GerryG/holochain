@@ -20,7 +20,7 @@ func Panix(on string) {
 
 func testDir(tm time.Time) string {
 	return "/tmp/holochain_test" + strconv.FormatInt(tm.Unix(), 10) +
-		 "." + strconv.Itoa(tm.Nanosecond())
+		"." + strconv.Itoa(tm.Nanosecond())
 }
 
 func mkTestDirName() string {
