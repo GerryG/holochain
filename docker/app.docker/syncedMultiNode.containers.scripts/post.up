@@ -1,0 +1,26 @@
+#!/bin/sh
+export "PATH=/Scripts/syncedMultiNode.containers.scripts:$PATH"
+
+sync externalStartEvent
+
+sync hc.sync.ready
+
+echo "releasing hc.sync services together"
+
+seedID=`cat /chain.seeded/devchain/.seedID`
+clusterDir="/chain.seeded/devchain/cluster/$seedID"
+
+#set -x
+
+#ls $clusterDir/hc
+#ls /runtime
+
+
+counter=1
+for container in `ls $clusterDir/hc`; do
+	cp /runtime/cluster/hc/$counter.* $clusterDir/hc/$container
+	counter=$(( counter+1 ))
+done
+
+
+cnys post.up

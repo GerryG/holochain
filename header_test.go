@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	ic "github.com/libp2p/go-libp2p-crypto"
+	. "github.com/metacurrency/holochain/hash"
 	. "github.com/smartystreets/goconvey/convey"
 	"testing"
 	"time"
@@ -16,7 +17,21 @@ func TestNewHeader(t *testing.T) {
 	Convey("it should make a header and return its hash", t, func() {
 		e := GobEntry{C: "some data"}
 		ph := NullHash()
-		hash, header, err := newHeader(h, now, "evenNumbers", &e, key, ph, ph)
+		hash, header, err := newHeader(h, now, "evenNumbers", &e, key, ph, ph, nil)
+
+		So(err, ShouldBeNil)
+		// encode the header and create a hash of it
+		b, _ := header.Marshal()
+		var h2 Hash
+		h2.Sum(h, b)
+		So(h2.String(), ShouldEqual, hash.String())
+	})
+
+	Convey("it should make a header and return its hash if change header", t, func() {
+		e := GobEntry{C: "some data"}
+		ph := NullHash()
+		delHash, _ := NewHash("QmP1DfoUjiWH2ZBo1PBH6FupdBucbDepx3HpWmEY6JMUpY")
+		hash, header, err := newHeader(h, now, "evenNumbers", &e, key, ph, ph, &StatusChange{Action: DelAction, Hash: delHash})
 
 		So(err, ShouldBeNil)
 		// encode the header and create a hash of it
@@ -32,7 +47,7 @@ func TestMarshalHeader(t *testing.T) {
 
 	e := GobEntry{C: "some  data"}
 	hd := testHeader(h, "evenNumbers", &e, key, now)
-
+	hd.Change.Action = ModAction
 	Convey("it should round-trip", t, func() {
 		b, err := hd.Marshal()
 		So(err, ShouldBeNil)
@@ -92,6 +107,8 @@ func mkTestHeader(t string) Header {
 		EntryLink:  el,
 		TypeLink:   NullHash(),
 	}
+	h1.Change.Hash = NullHash()
+
 	//h1.Sig.S.321)
 	return h1
 }

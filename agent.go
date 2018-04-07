@@ -1,7 +1,7 @@
 // Copyright (C) 2013-2017, The MetaCurrency Project (Eric Harris-Braun, Arthur Brock, et. al.)
 // Use of this source code is governed by GPLv3 found in the LICENSE file
 //---------------------------------------------------------------------------------------
-// key generation and marshal/unmarshaling for holochains
+// key generation and marshal/unmarshaling and abstraction of agent for holochains
 
 package holochain
 
@@ -10,82 +10,129 @@ import (
 	"errors"
 	"fmt"
 	ic "github.com/libp2p/go-libp2p-crypto"
+	peer "github.com/libp2p/go-libp2p-peer"
+	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 )
 
-// AgentName is the user's unique identifier in context of this holochain.
-type AgentName string
+// AgentIdentity is the user's unique identity information in context of this holochain.
+// it follows AgentIdentitySchema in DNA
+type AgentIdentity string
 
-type KeytypeType int
+type AgentType int
 
 const (
-	IPFS = iota
+	LibP2P = iota
 )
 
+// Agent abstracts the key behaviors and connection to a holochain node address
+// Note that this is currently only a partial abstraction because the NodeID is always a libp2p peer.ID
+// to complete the abstraction so we could use other libraries for p2p2 network transaction we
+// would need to also abstract a matching NodeID type
 type Agent interface {
-	Name() AgentName
-	KeyType() KeytypeType
-	GenKeys() error
+	Identity() AgentIdentity
+	SetIdentity(id AgentIdentity)
+	AgentType() AgentType
+	GenKeys(seed io.Reader) error
 	PrivKey() ic.PrivKey
 	PubKey() ic.PubKey
+	NodeID() (peer.ID, string, error)
+	AgentEntry(revocation Revocation) (AgentEntry, error)
 }
 
-type IPFSAgent struct {
-	name AgentName
-	priv ic.PrivKey
+type LibP2PAgent struct {
+	identity AgentIdentity
+	priv     ic.PrivKey
+	pub      ic.PubKey // cached so as not to recalculate all the time
 }
 
-func (a *IPFSAgent) Name() AgentName {
-	return a.name
+func (a *LibP2PAgent) Identity() AgentIdentity {
+	return a.identity
+}
+func (a *LibP2PAgent) SetIdentity(id AgentIdentity) {
+	a.identity = id
 }
 
-func (a *IPFSAgent) KeyType() KeytypeType {
-	return IPFS
+func (a *LibP2PAgent) AgentType() AgentType {
+	return LibP2P
 }
 
-func (a *IPFSAgent) PrivKey() ic.PrivKey {
+func (a *LibP2PAgent) PrivKey() ic.PrivKey {
 	return a.priv
 }
 
-func (a *IPFSAgent) PubKey() ic.PubKey {
-	return a.priv.GetPublic()
+func (a *LibP2PAgent) PubKey() ic.PubKey {
+	return a.pub
 }
 
-func (a *IPFSAgent) GenKeys() (err error) {
+func (a *LibP2PAgent) GenKeys(seed io.Reader) (err error) {
 	var priv ic.PrivKey
-	priv, _, err = ic.GenerateEd25519Key(rand.Reader)
+	if seed == nil {
+		seed = rand.Reader
+	}
+	priv, _, err = ic.GenerateEd25519Key(seed)
 	if err != nil {
 		return
 	}
 	a.priv = priv
+	a.pub = priv.GetPublic()
+	return
+}
+
+func (a *LibP2PAgent) NodeID() (nodeID peer.ID, nodeIDStr string, err error) {
+	nodeID, err = peer.IDFromPrivateKey(a.PrivKey())
+	if err == nil {
+		nodeIDStr = peer.IDB58Encode(nodeID)
+	}
+	return
+}
+
+func (a *LibP2PAgent) AgentEntry(revocation Revocation) (entry AgentEntry, err error) {
+
+	entry = AgentEntry{
+		Identity: a.Identity(),
+	}
+	if revocation != nil {
+		entry.Revocation, err = revocation.Marshal()
+		if err != nil {
+			return
+		}
+	}
+	entry.PublicKey, err = ic.MarshalPublicKey(a.PubKey())
+	if err != nil {
+		return
+	}
 	return
 }
 
 // NewAgent creates an agent structure of the given type
 // Note: currently only IPFS agents are implemented
-func NewAgent(keyType KeytypeType, name AgentName) (agent Agent, err error) {
-	switch keyType {
-	case IPFS:
-		a := IPFSAgent{
-			name: name,
+func NewAgent(agentType AgentType, identity AgentIdentity, seed io.Reader) (agent Agent, err error) {
+	switch agentType {
+	case LibP2P:
+		a := LibP2PAgent{
+			identity: identity,
 		}
-		err = a.GenKeys()
+		err = a.GenKeys(seed)
 		if err != nil {
 			return
 		}
 		agent = &a
 	default:
-		err = fmt.Errorf("unknown key type: %d", keyType)
+		err = fmt.Errorf("unknown key type: %d", agentType)
 	}
 	return
 }
 
 // SaveAgent saves out the keys and agent name to the given directory
 func SaveAgent(path string, agent Agent) (err error) {
-	writeFile(path, AgentFileName, []byte(agent.Name()))
+	WriteFile([]byte(agent.Identity()), path, AgentFileName)
 	if err != nil {
 		return
 	}
-	if fileExists(path + "/" + PrivKeyFileName) {
+	if FileExists(path, PrivKeyFileName) {
 		return errors.New("keys already exist")
 	}
 	var k []byte
@@ -93,20 +140,36 @@ func SaveAgent(path string, agent Agent) (err error) {
 	if err != nil {
 		return
 	}
-	err = writeFile(path, PrivKeyFileName, k)
+	err = WriteFile(k, path, PrivKeyFileName)
+	os.Chmod(filepath.Join(path, PrivKeyFileName), OS_USER_R)
 	return
 }
 
-// LoadAgent gets the agent and signing key from the specified directory
+// LoadAgent gets the agent identity and private key from the specified directory
+// TODO confirm against chain?
 func LoadAgent(path string) (agent Agent, err error) {
-	name, err := readFile(path, AgentFileName)
+	var perms os.FileMode
+
+	// TODO, make this check also work on windows instead of just bypassing!
+	if runtime.GOOS != "windows" {
+		perms, err = filePerms(path, PrivKeyFileName)
+		if err != nil {
+			return
+		}
+		if perms != OS_USER_R {
+			err = errors.New(filepath.Join(path, PrivKeyFileName) + " file not read-only")
+			return
+		}
+	}
+	var identity []byte
+	identity, err = ReadFile(path, AgentFileName)
 	if err != nil {
 		return
 	}
-	a := IPFSAgent{
-		name: AgentName(name),
+	a := LibP2PAgent{
+		identity: AgentIdentity(identity),
 	}
-	k, err := readFile(path, PrivKeyFileName)
+	k, err := ReadFile(path, PrivKeyFileName)
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +177,7 @@ func LoadAgent(path string) (agent Agent, err error) {
 	if err != nil {
 		return
 	}
+	a.pub = a.priv.GetPublic()
 	agent = &a
 	return
 }

@@ -1,0 +1,28 @@
+#!/bin/sh
+export scenario="{{SCENARIO}}"
+export role="{{ROLE}}"
+
+
+#ls /chain.seeded -la
+
+go version
+hcdev -v
+#echo "hc init $HOSTNAME"
+
+# hc init $HOSTNAME
+
+#echo
+
+#echo "hc join /.holochain/devchain"
+# hc join /chain.seeded/devchain devchain
+#echo
+# dnahash=`cat ~/.holochain/devchain/dna.hash`
+#echo "joined: $dnahash"
+
+bsip=`cat /chain.seeded/bs.ip`
+#echo "setting bootstrap to $bsip:3142"
+HOLOCHAINCONFIG_BOOTSTRAP=$bsip:3142
+
+#echo "hc -debug test devchain $scenario $role"
+hcdev -debug test devchain $scenario $role
+#echo

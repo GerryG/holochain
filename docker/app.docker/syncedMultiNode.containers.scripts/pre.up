@@ -1,0 +1,55 @@
+#!/bin/sh
+export PATH="/Scripts/syncedMultiNode.containers.scripts:$PATH"
+
+#pause everything
+syncStart pre.up bs hc.sync.ready post.up hc.sync.complete
+
+#all containers have already started
+sync externalStartEvent
+
+#make sure that all hc.sync containers have started properly (this probably isnt necessary)
+sync hc.sync.counter
+
+
+rm -rf /home/user/.holochain/devchain
+rm -rf /chain.seeded/devchain
+
+set -x
+
+# hcdev init $HOSTNAME
+
+ls /chain.source -la
+# hcdev clone /chain.source devchain
+
+# hcdev test devchain
+hcdev test
+
+# hcdev seed devchain
+devDirectory="/home/user/theDevDirectory"
+
+mkdir $devDirectory -p
+cp . $devDirectory -r
+
+echo "$HOSTNAME" > $devDirectory/.seedID
+seedID=`cat $devDirectory/.seedID`
+echo "seedID: $seedID" 
+
+clusterDir="$devDirectory/cluster/$seedID"
+mkdir $devDirectory/cluster
+mkdir $devDirectory/cluster/$seedID
+
+# touch $clusterDir/.cluster.lock
+
+# ls -la $clusterDir
+# echo
+
+
+ls $devDirectory
+
+cp $devDirectory /chain.seeded -r
+
+# ls -la /chain.seeded/devchain
+
+cnys pre.up
+
+set +x

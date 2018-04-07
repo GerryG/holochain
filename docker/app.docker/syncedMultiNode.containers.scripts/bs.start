@@ -1,0 +1,21 @@
+#!/bin/sh
+
+export PATH="/Scripts/syncedMultiNode.containers.scripts:$PATH"
+
+sync externalStartEvent
+
+sync pre.up
+
+ipaddr=`hostname -i`
+
+echo "bootstrap server container ip address: $ipaddr"
+
+echo $ipaddr > /chain.seeded/bs.ip
+
+bs &
+#give bs server time to actually start
+sleep .5
+
+cnys bs
+
+sync hc.sync.complete

@@ -9,36 +9,45 @@ package holochain
 import (
 	"encoding/binary"
 	"encoding/json"
-	"github.com/lestrrat/go-jsschema"
 	"github.com/lestrrat/go-jsval"
-	"github.com/lestrrat/go-jsval/builder"
+	. "github.com/metacurrency/holochain/hash"
 	"io"
+	"strings"
 )
 
 const (
-	DNAEntryType   = "%dna"
-	AgentEntryType = "%agent"
-	KeyEntryType   = "%%key" // virtual entry type, not actually on the chain
-)
+	SysEntryTypePrefix     = "%"
+	VirtualEntryTypePrefix = "%%"
 
-const (
-	DataFormatLinks   = "links"
-	DataFormatJSON    = "json"
-	DataFormatString  = "string"
-	DataFormatRawJS   = "js"
-	DataFormatRawZygo = "zygo"
-)
+	// System defined entry types
 
-const (
+	DNAEntryType   = SysEntryTypePrefix + "dna"
+	AgentEntryType = SysEntryTypePrefix + "agent"
+	KeyEntryType   = VirtualEntryTypePrefix + "key" // virtual entry type, not actually on the chain
+
+	// Entry type formats
+
+	DataFormatLinks    = "links"
+	DataFormatJSON     = "json"
+	DataFormatString   = "string"
+	DataFormatRawJS    = "js"
+	DataFormatRawZygo  = "zygo"
+	DataFormatSysDNA   = "_DNA"
+	DataFormatSysAgent = "_agent"
+	DataFormatSysKey   = "_key"
+
+	// Entry sharing types
+
 	Public  = "public"
 	Partial = "partial"
+	Private = "private"
 )
 
-// AgentEntry structure for building KeyEntryType entries
+// AgentEntry structure for building AgentEntryType entries
 type AgentEntry struct {
-	Name    AgentName
-	KeyType KeytypeType
-	Key     []byte // marshaled public key
+	Identity   AgentIdentity
+	Revocation []byte // marshaled revocation
+	PublicKey  []byte // marshaled public key
 }
 
 // LinksEntry holds one or more links
@@ -48,20 +57,30 @@ type LinksEntry struct {
 
 // Link structure for holding meta tagging of linking entry
 type Link struct {
-	Base string // hash of entry (perhaps elsewhere) tow which we are attaching the link
-	Link string // hash of entry being linked to
-	Tag  string // tag
+	LinkAction string // StatusAction (either AddAction or DelAction)
+	Base       string // hash of entry (perhaps elsewhere) to which we are attaching the link
+	Link       string // hash of entry being linked to
+	Tag        string // tag
+}
+
+// DelEntry struct holds the record of an entry's deletion
+type DelEntry struct {
+	Hash    Hash
+	Message string
 }
 
 // EntryDef struct holds an entry definition
 type EntryDef struct {
 	Name       string
 	DataFormat string
-	Schema     string // file name of schema or language schema directive
-	SchemaHash Hash
 	Sharing    string
+	Schema     string
 	validator  SchemaValidator
 }
+
+var DNAEntryDef = &EntryDef{Name: DNAEntryType, DataFormat: DataFormatSysDNA}
+var AgentEntryDef = &EntryDef{Name: AgentEntryType, DataFormat: DataFormatSysAgent}
+var KeyEntryDef = &EntryDef{Name: KeyEntryType, DataFormat: DataFormatSysKey}
 
 // Entry describes serialization and deserialziation of entry data
 type Entry interface {
@@ -84,6 +103,16 @@ type GobEntry struct {
 // JSONEntry is a structure for implementing JSON encoding of Entry content
 type JSONEntry struct {
 	C interface{}
+}
+
+// IsSysEntry returns true if the entry type is system defined
+func (def *EntryDef) IsSysEntry() bool {
+	return strings.HasPrefix(def.Name, SysEntryTypePrefix)
+}
+
+// IsVirtualEntry returns true if the entry type is virtual
+func (def *EntryDef) IsVirtualEntry() bool {
+	return strings.HasPrefix(def.Name, VirtualEntryTypePrefix)
 }
 
 // MarshalEntry serializes an entry to a writer
@@ -177,18 +206,21 @@ func (v *JSONSchemaValidator) Validate(entry interface{}) (err error) {
 
 // BuildJSONSchemaValidator builds a validator in an EntryDef
 func (d *EntryDef) BuildJSONSchemaValidator(path string) (err error) {
-	var s *schema.Schema
-	s, err = schema.ReadFile(path + "/" + d.Schema)
+	validator, err := BuildJSONSchemaValidatorFromFile(path)
 	if err != nil {
 		return
 	}
+	validator.v.SetName(d.Name)
+	d.validator = validator
+	return
+}
 
-	b := builder.New()
-	var v JSONSchemaValidator
-	v.v, err = b.Build(s)
-	if err == nil {
-		v.v.SetName(d.Schema)
-		d.validator = &v
+func (d *EntryDef) BuildJSONSchemaValidatorFromString(schema string) (err error) {
+	validator, err := BuildJSONSchemaValidatorFromString(schema)
+	if err != nil {
+		return
 	}
+	validator.v.SetName(d.Name)
+	d.validator = validator
 	return
 }

@@ -1,0 +1,78 @@
+#!/bin/bash
+echo "HC: $0"
+
+holochainBinDir="$GOPATH/src/github.com/metacurrency/holochain/bin"
+
+scenarioName=$1
+
+#set the HOLOCHAIN_SYSTEM_BIN variable
+. $holochainBinDir/holochain.system.checkInstalled || { echo "HC: cannot find holochain bin directory. exiting" && exit 1 ; }
+#set the HOLOCHAIN_APPNAME and HOLOCHAIN_APPDIR variables
+. $holochainBinDir/holochain.app.findAppDir ||  exit 1
+
+
+export dockerBaseRun=" -e LOCAL_USER_ID=`id -u $USER` "
+export LOCAL_USER_ID=`id -u $USER`
+
+. $HOLOCHAIN_SYSTEM_BIN/app/createRuntime || exit 1
+
+#creates a single script for each role in the testScenario, which is run by the respective container
+$HOLOCHAIN_SYSTEM_BIN/app/testScenario.createClusterScripts $scenarioName || exit 1
+
+#begin log for this session
+logFile=$HOLOCHAIN_APPLOGDIR/testScenario.$scenarioName.log
+printf "########################################################################\n########################################################################\n########################################################################\n" | tee -a $logFile
+echo "HC: testScenario $scenarioName started `date`" | tee -a $HOLOCHAIN_APPLOGDIR/cluster.log >> $logFile
+
+set -x
+
+####docker stuff
+mkdir -p "$HOLOCHAIN_APPDIR/runtime/docker" > /dev/null
+#cp the Dockerfile in preparation for dependency injection
+cp $HOLOCHAIN_SYSTEM_BIN/../docker/app.docker/Dockerfile.BASE $HOLOCHAIN_APPDIR/runtime/docker/Dockerfile.BASE
+#build the image to use as the base for the bs instance and hc instances
+
+holochainImageTag="holochain.app.testing.$HOLOCHAIN_APP_MACHINENAME"
+docker image inspect metacurrency/holochain/core.docker.forapptests || { printf "HC: no current docker image for testing app.\n\n  run: $ holochain.system.buildImageForAppTests" && exit 1 ; }
+docker build --no-cache=true -f $HOLOCHAIN_APPDIR/runtime/docker/Dockerfile.BASE -t $holochainImageTag $HOLOCHAIN_APPDIR
+
+
+#TODO COMMENT AND MAKE WORK
+#CONSTANTS
+systemAppDockerDir="$HOLOCHAIN_SYSTEM_BIN/../docker/app.docker"
+appAppDockerDir="$HOLOCHAIN_APPDIR/runtime/docker"
+
+#appScriptDir="$HOLOCHAIN_APPDIR/runtime/Scripts"
+
+#configureThis
+systemDockerCompose="$systemAppDockerDir/docker-compose.with.bs.syncedHCMultiNode.yml"
+#constants
+appDockerCompose="$HOLOCHAIN_APPDIR/__tmp__.holochain.2134837348734.docker-compose.runCluster.yml"
+rm $appDockerCompose &> /dev/null
+ln $systemDockerCompose $appDockerCompose
+
+#these depend on what your systemDockerCompose file requires
+dockerfiles="app.seedService app.bsService app.syncedHCMultiNode app.syncedHCMultiNode.releaseSyncService app.externalStartEvent"
+for dockerFileName in $dockerfiles
+do
+  cp "$systemAppDockerDir/Dockerfile.$dockerFileName" "$appAppDockerDir/Dockerfile.$dockerFileName"
+done
+sed -i'' s/{{FROM_DOCKERIMAGETAG}}/$holochainImageTag/g $appAppDockerDir/Dockerfile.app.*
+
+#give access to the scripts .. maybe, might not work ( symlinks )
+ln -s $HOLOCHAIN_SYSTEM_BIN/../docker/app.docker $HOLOCHAIN_APPDIR/runtime/Scripts
+
+#add own flowcontrol over docker start order
+mkdir -p $HOLOCHAIN_APPDIR/runtime/cluster/sync &> /dev/null
+touch $HOLOCHAIN_APPDIR/runtime/cluster/sync/externalStartEvent || { echo "HC: Could not add start event" && exit 1 ; }
+
+echo "$HOLOCHAIN_SYSTEM_BIN/app/runCluster $scenarioName $systemDockerCompose $logFile"
+$HOLOCHAIN_SYSTEM_BIN/app/runCluster $scenarioName $logFile
+
+rm $appDockerCompose &
+rm -r $HOLOCHAIN_APPDIR/runtime &
+
+set +x
+
+#otherwise bash prompt gets injured
+sleep 1

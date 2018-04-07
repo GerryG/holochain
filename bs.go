@@ -17,6 +17,11 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"time"
+)
+
+const (
+	BootstrapTTL = time.Minute * 5
 )
 
 type BSReq struct {
@@ -26,30 +31,36 @@ type BSReq struct {
 }
 
 type BSResp struct {
-	Req    BSReq
-	Remote string
+	Req      BSReq
+	Remote   string
+	LastSeen time.Time
 }
 
 func (h *Holochain) BSpost() (err error) {
 	if h.node == nil {
 		return errors.New("Node hasn't been initialized yet.")
 	}
-	nodeID := peer.IDB58Encode(h.id)
-	req := BSReq{Version: 1, NodeID: nodeID, NodeAddr: h.node.NetAddr.String()}
-	host := h.config.BootstrapServer
+	nodeID := h.nodeIDStr
+	req := BSReq{Version: 1, NodeID: nodeID, NodeAddr: h.node.ExternalAddr().String()}
+	host := h.Config.BootstrapServer
 	id := h.DNAHash()
 	url := fmt.Sprintf("http://%s/%s/%s", host, id.String(), nodeID)
 	var b []byte
 	b, err = json.Marshal(req)
 	//var resp *http.Response
 	if err == nil {
-		_, err = http.Post(url, "application/json", bytes.NewBuffer(b))
+		var resp *http.Response
+		resp, err = http.Post(url, "application/json", bytes.NewBuffer(b))
+		if err == nil {
+			resp.Body.Close()
+		}
+
 	}
 	return
 }
 
 func (h *Holochain) checkBSResponses(nodes []BSResp) (err error) {
-	myNodeID := peer.IDB58Encode(h.id)
+	myNodeID := h.nodeIDStr
 	for _, r := range nodes {
 		h.dht.dlog.Logf("checking returned node: %v", r)
 
@@ -69,15 +80,14 @@ func (h *Holochain) checkBSResponses(nodes []BSResp) (err error) {
 			if err == nil {
 				// don't "discover" ourselves
 				if r.Req.NodeID != myNodeID {
-					h.dht.dlog.Logf("discovered peer: %s (%v)", r.Req.NodeID, addr)
-					h.node.Host.Peerstore().AddAddr(id, addr, pstore.PermanentAddrTTL)
-					err = h.dht.UpdateGossiper(id, 0)
-
+					h.dht.dlog.Logf("discovered peer via bs: %s (%v)", r.Req.NodeID, addr)
+					go func() {
+						err = h.AddPeer(pstore.PeerInfo{ID: id, Addrs: []ma.Multiaddr{addr}})
+					}()
 				}
 
 			}
 		}
-
 	}
 	return
 }
@@ -86,16 +96,26 @@ func (h *Holochain) BSget() (err error) {
 	if h.node == nil {
 		return errors.New("Node hasn't been initialized yet.")
 	}
-	host := h.config.BootstrapServer
+	host := h.Config.BootstrapServer
 	if host == "" {
 		return
 	}
 	id := h.DNAHash()
 	url := fmt.Sprintf("http://%s/%s", host, id.String())
+
+	var req *http.Request
+
+	req, err = http.NewRequest("GET", url, nil)
+	if err != nil {
+		return
+	}
+	req.Close = true
+	client := http.DefaultClient
 	var resp *http.Response
-	resp, err = http.Get(url)
+	resp, err = client.Do(req)
+
+	//	resp, err = http.Get(url)
 	if err == nil {
-		defer resp.Body.Close()
 		var b []byte
 		b, err = ioutil.ReadAll(resp.Body)
 		if err == nil {
@@ -106,6 +126,8 @@ func (h *Holochain) BSget() (err error) {
 
 			}
 		}
+		resp.Body.Close()
+
 	}
 	return
 }

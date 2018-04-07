@@ -1,0 +1,37 @@
+#!/bin/sh
+export "PATH=/Scripts/syncedMultiNode.containers.scripts:$PATH"
+
+syncStart hc.sync.counter.$HOSTNAME hc.sync.ready.$HOSTNAME hc.sync.complete.$HOSTNAME
+
+#ls /runtime/cluster/sync
+
+sync externalStartEvent
+
+cnys hc.sync.counter.$HOSTNAME
+
+sync bs
+
+seedID=`cat /chain.seeded/devchain/.seedID`
+clusterDir="/chain.seeded/devchain/cluster/$seedID"
+
+echo "Seed host name: $seedID"
+echo "My host name: $HOSTNAME"
+
+[ ! -d "$clusterDir/hc" ] && mkdir $clusterDir/hc
+echo "#!/bin/sh" >> $clusterDir/hc/$HOSTNAME 
+echo "echo defaultBehaviour. No test role found. " >> $clusterDir/hc/$HOSTNAME 
+echo "hc serve devchain" >> $clusterDir/hc/$HOSTNAME 
+chmod +x $clusterDir/hc/$HOSTNAME 
+
+cnys hc.sync.ready hc.sync.ready.$HOSTNAME
+
+sync post.up
+
+releaseTime=`date +%s-%N`
+echo "$HOSTNAME > starting hc at: $releaseTime"
+
+# this runs the template that was copied into the location
+#   default at time of writing is hc.testScenario.role.template
+$clusterDir/hc/$HOSTNAME
+
+cnys hc.sync.complete hc.sync.complete.$HOSTNAME

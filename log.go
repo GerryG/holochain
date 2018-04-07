@@ -11,19 +11,46 @@ import (
 	"github.com/fatih/color"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 )
 
 // Logger holds logger configuration
 type Logger struct {
+	Name    string
 	Enabled bool
 	Format  string
 	f       string
 	tf      string
 	color   *color.Color
 	w       io.Writer
+
+	Prefix      string
+	PrefixColor *color.Color
+}
+
+var colorMap map[string]*color.Color
+var EnableAllLoggersEnv string = "HC_ENABLE_ALL_LOGS"
+
+func (h *Logger) GetColor(colorName string) *color.Color {
+	if _, ok := colorMap["red"]; !ok {
+		colorMap = make(map[string]*color.Color)
+		colorMap["red"] = color.New(color.FgRed)
+		colorMap["blue"] = color.New(color.FgBlue)
+		colorMap["green"] = color.New(color.FgGreen)
+		colorMap["yellow"] = color.New(color.FgYellow)
+		colorMap["white"] = color.New(color.FgWhite)
+		colorMap["cyan"] = color.New(color.FgCyan)
+		colorMap["magenta"] = color.New(color.FgMagenta)
+	}
+	if val, ok := colorMap[colorName]; ok {
+		return val
+	} else {
+		return colorMap["white"]
+	}
 }
 
 func (l *Logger) setupColor(f string) (colorResult *color.Color, result string) {
@@ -38,24 +65,7 @@ func (l *Logger) setupColor(f string) (colorResult *color.Color, result string) 
 	}
 
 	if txtColor != "" {
-		var c color.Attribute
-		switch txtColor {
-		case "red":
-			c = color.FgRed
-		case "blue":
-			c = color.FgBlue
-		case "green":
-			c = color.FgGreen
-		case "yellow":
-			c = color.FgYellow
-		case "white":
-			c = color.FgWhite
-		case "cyan":
-			c = color.FgCyan
-		case "magenta":
-			c = color.FgMagenta
-		}
-		colorResult = color.New(c)
+		colorResult = l.GetColor(txtColor)
 	}
 	return
 }
@@ -85,12 +95,13 @@ func (l *Logger) New(w io.Writer) (err error) {
 
 	if l.Format == "" {
 		l.f = `%{message}`
+		l.color = nil
 	} else {
 		l.color, l.f = l.setupColor(l.Format)
 		l.tf, l.f = l.setupTime(l.f)
 	}
 
-	d := os.Getenv("DEBUG")
+	d := os.Getenv(EnableAllLoggersEnv)
 	switch d {
 	case "1":
 		l.Enabled = true
@@ -99,6 +110,10 @@ func (l *Logger) New(w io.Writer) (err error) {
 	}
 
 	return
+}
+
+func (l *Logger) SetPrefix(prefixFormat string) {
+	l.PrefixColor, l.Prefix = l.setupColor(prefixFormat)
 }
 
 func (l *Logger) parse(m string) (output string) {
@@ -116,6 +131,22 @@ func (l *Logger) _parse(m string, t *time.Time) (output string) {
 		tTxt := t.Format(l.tf)
 		output = strings.Replace(output, "%{time}", tTxt, -1)
 	}
+
+	// TODO add the calling depth to the line format string.
+	re := regexp.MustCompile(`(%{line})|(%{file})`)
+	matches := re.FindStringSubmatch(l.f)
+	if len(matches) > 0 {
+		_, file, line, ok := runtime.Caller(6)
+		if ok {
+			// sometimes the stack is one less deep than we expect in which case
+			// the file shows "asm_" so check for this case and redo!
+			if strings.Index(file, "asm_") > 0 {
+				_, file, line, ok = runtime.Caller(5)
+			}
+			output = strings.Replace(output, "%{file}", filepath.Base(file), -1)
+			output = strings.Replace(output, "%{line}", fmt.Sprintf("%d", line), -1)
+		}
+	}
 	return
 }
 
@@ -125,12 +156,21 @@ func (l *Logger) p(m interface{}) {
 
 func (l *Logger) pf(m string, args ...interface{}) {
 	if l != nil && l.Enabled {
+		l.prefixPrint()
 		f := l.parse(m)
 		if l.color != nil {
 			l.color.Fprintf(l.w, f+"\n", args...)
 		} else {
 			fmt.Fprintf(l.w, f+"\n", args...)
 		}
+	}
+}
+
+func (l *Logger) prefixPrint(args ...interface{}) {
+	if l.PrefixColor != nil {
+		l.PrefixColor.Fprintf(l.w, l.Prefix, args...)
+	} else {
+		fmt.Fprintf(l.w, l.Prefix, args...)
 	}
 }
 

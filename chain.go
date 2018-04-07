@@ -12,8 +12,10 @@ import (
 	"errors"
 	"fmt"
 	ic "github.com/libp2p/go-libp2p-crypto"
+	. "github.com/metacurrency/holochain/hash"
 	"io"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -21,6 +23,16 @@ import (
 type WalkerFn func(key *Hash, header *Header, entry Entry) error
 
 var ErrHashNotFound = errors.New("hash not found")
+var ErrIncompleteChain = errors.New("operation not allowed on incomplete chain")
+
+const (
+	ChainMarshalFlagsNone            = 0x00
+	ChainMarshalFlagsNoHeaders       = 0x01
+	ChainMarshalFlagsNoEntries       = 0x02
+	ChainMarshalFlagsOmitDNA         = 0x04
+	ChainMarshalFlagsNoPrivate       = 0x08
+	ChainMarshalPrivateEntryRedacted = "%%PRIVATE ENTRY REDACTED%%"
+)
 
 // Chain structure for providing in-memory access to chain data, entries headers and hashes
 type Chain struct {
@@ -33,11 +45,13 @@ type Chain struct {
 
 	//---
 
-	s *os.File // if this stream is not nil, new entries will get marshaled to it
+	s        *os.File // if this stream is not nil, new entries will get marshaled to it
+	hashSpec HashSpec
+	lk       sync.RWMutex
 }
 
 // NewChain creates and empty chain
-func NewChain() (chain *Chain) {
+func NewChain(hashSpec HashSpec) (chain *Chain) {
 	c := Chain{
 		Headers:  make([]*Header, 0),
 		Entries:  make([]Entry, 0),
@@ -45,6 +59,7 @@ func NewChain() (chain *Chain) {
 		TypeTops: make(map[string]int),
 		Hmap:     make(map[string]int),
 		Emap:     make(map[string]int),
+		hashSpec: hashSpec,
 	}
 	chain = &c
 	return
@@ -52,16 +67,16 @@ func NewChain() (chain *Chain) {
 
 // NewChainFromFile creates a chain from a file, loading any data there,
 // and setting it to be persisted to. If no file exists it will be created.
-func NewChainFromFile(h HashSpec, path string) (c *Chain, err error) {
+func NewChainFromFile(spec HashSpec, path string) (c *Chain, err error) {
 	defer func() {
 		if err != nil {
 			Debugf("error loading chain :%s", err.Error())
 		}
 	}()
-	c = NewChain()
+	c = NewChain(spec)
 
 	var f *os.File
-	if fileExists(path) {
+	if FileExists(path) {
 		f, err = os.Open(path)
 		if err != nil {
 			return
@@ -70,7 +85,7 @@ func NewChainFromFile(h HashSpec, path string) (c *Chain, err error) {
 		for {
 			var header *Header
 			var e Entry
-			header, e, err = readPair(f)
+			header, e, err = readPair(ChainMarshalFlagsNone, f)
 			if err != nil && err.Error() == "EOF" {
 				err = nil
 				break
@@ -90,7 +105,7 @@ func NewChainFromFile(h HashSpec, path string) (c *Chain, err error) {
 			var hash Hash
 
 			// hash the header
-			hash, _, err = hd.Sum(h)
+			hash, _, err = hd.Sum(spec)
 			if err != nil {
 				return
 			}
@@ -127,6 +142,8 @@ func (c *Chain) Top() (header *Header) {
 
 // Nth returns the nth latest header
 func (c *Chain) Nth(n int) (header *Header) {
+	c.lk.RLock()
+	defer c.lk.RUnlock()
 	l := len(c.Headers)
 	if l-n > 0 {
 		header = c.Headers[l-n-1]
@@ -136,6 +153,8 @@ func (c *Chain) Nth(n int) (header *Header) {
 
 // TopType returns the latest header of a given type
 func (c *Chain) TopType(entryType string) (hash *Hash, header *Header) {
+	c.lk.RLock()
+	defer c.lk.RUnlock()
 	i, ok := c.TypeTops[entryType]
 	if ok {
 		header = c.Headers[i]
@@ -146,22 +165,26 @@ func (c *Chain) TopType(entryType string) (hash *Hash, header *Header) {
 }
 
 // AddEntry creates a new header and adds it to a chain
-func (c *Chain) AddEntry(h HashSpec, now time.Time, entryType string, e Entry, key ic.PrivKey) (hash Hash, err error) {
+func (c *Chain) AddEntry(now time.Time, entryType string, e Entry, privKey ic.PrivKey) (hash Hash, err error) {
+	c.lk.Lock()
+	defer c.lk.Unlock()
 	var l int
 	var header *Header
-	l, hash, header, err = c.PrepareHeader(h, now, entryType, e, key)
+	now = now.Round(0)
+	l, hash, header, err = c.prepareHeader(now, entryType, e, privKey, nil)
 	if err == nil {
 		err = c.addEntry(l, hash, header, e)
 	}
 	return
 }
 
-func (c *Chain) PrepareHeader(h HashSpec, now time.Time, entryType string, e Entry, key ic.PrivKey) (entryIdx int, hash Hash, header *Header, err error) {
-
+// prepareHeader builds a header that could be added to the chain.
+// Not thread safe, this must be called with the chain locked for writing so something else
+// doesn't get inserted
+func (c *Chain) prepareHeader(now time.Time, entryType string, e Entry, privKey ic.PrivKey, change *StatusChange) (entryIdx int, hash Hash, header *Header, err error) {
 	// get the previous hashes
 	var ph, pth Hash
 
-	//@TODO make this transactional
 	l := len(c.Hashes)
 	if l == 0 {
 		ph = NullHash()
@@ -176,7 +199,7 @@ func (c *Chain) PrepareHeader(h HashSpec, now time.Time, entryType string, e Ent
 		pth = c.Hashes[i]
 	}
 
-	hash, header, err = newHeader(h, now, entryType, e, key, ph, pth)
+	hash, header, err = newHeader(c.hashSpec, now, entryType, e, privKey, ph, pth, change)
 	if err != nil {
 		return
 	}
@@ -184,6 +207,7 @@ func (c *Chain) PrepareHeader(h HashSpec, now time.Time, entryType string, e Ent
 	return
 }
 
+// addEntry, low level entry add, not thread safe, must call c.lock in the calling funciton
 func (c *Chain) addEntry(entryIdx int, hash Hash, header *Header, e Entry) (err error) {
 
 	l := len(c.Hashes)
@@ -191,6 +215,12 @@ func (c *Chain) addEntry(entryIdx int, hash Hash, header *Header, e Entry) (err 
 		err = errors.New("entry indexes don't match can't create new entry")
 		return
 	}
+
+	if l != len(c.Entries) {
+		err = ErrIncompleteChain
+		return
+	}
+
 	var g GobEntry
 	g = *e.(*GobEntry)
 
@@ -210,6 +240,8 @@ func (c *Chain) addEntry(entryIdx int, hash Hash, header *Header, e Entry) (err 
 
 // Get returns the header of a given hash
 func (c *Chain) Get(h Hash) (header *Header, err error) {
+	c.lk.RLock()
+	defer c.lk.RUnlock()
 	i, ok := c.Hmap[h.String()]
 	if ok {
 		header = c.Headers[i]
@@ -221,6 +253,8 @@ func (c *Chain) Get(h Hash) (header *Header, err error) {
 
 // GetEntry returns the entry of a given entry hash
 func (c *Chain) GetEntry(h Hash) (entry Entry, entryType string, err error) {
+	c.lk.RLock()
+	defer c.lk.RUnlock()
 	i, ok := c.Emap[h.String()]
 	if ok {
 		entry = c.Entries[i]
@@ -233,6 +267,8 @@ func (c *Chain) GetEntry(h Hash) (entry Entry, entryType string, err error) {
 
 // GetEntryHeader returns the header of a given entry hash
 func (c *Chain) GetEntryHeader(h Hash) (header *Header, err error) {
+	c.lk.RLock()
+	defer c.lk.RUnlock()
 	i, ok := c.Emap[h.String()]
 	if ok {
 		header = c.Headers[i]
@@ -243,45 +279,122 @@ func (c *Chain) GetEntryHeader(h Hash) (header *Header, err error) {
 }
 
 func writePair(writer io.Writer, header *Header, entry Entry) (err error) {
-	err = MarshalHeader(writer, header)
-	if err != nil {
-		return
+	if header != nil {
+		err = MarshalHeader(writer, header)
+		if err != nil {
+			return
+		}
 	}
-	err = MarshalEntry(writer, entry)
+	if entry != nil {
+		err = MarshalEntry(writer, entry)
+	}
 	return
 }
 
-func readPair(reader io.Reader) (header *Header, entry Entry, err error) {
-	var hd Header
-	err = UnmarshalHeader(reader, &hd, 34)
-	if err != nil {
-		return
+func readPair(flags int64, reader io.Reader) (header *Header, entry Entry, err error) {
+	if (flags & ChainMarshalFlagsNoHeaders) == 0 {
+		var hd Header
+		err = UnmarshalHeader(reader, &hd, 34)
+		if err != nil {
+			return
+		}
+		header = &hd
 	}
-	header = &hd
-	entry, err = UnmarshalEntry(reader)
+	if (flags & ChainMarshalFlagsNoEntries) == 0 {
+		entry, err = UnmarshalEntry(reader)
+	}
 	return
+}
+
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
+func filterPass(index int, header *Header, whitelistTypes []string, blacklistTypes []string) bool {
+	pass := true
+	if len(whitelistTypes) > 0 {
+		pass = contains(whitelistTypes, header.Type)
+	}
+
+	if len(blacklistTypes) > 0 {
+		pass = pass && !contains(blacklistTypes, header.Type)
+	}
+	return pass
+}
+
+type ChainPair struct {
+	Header *Header
+	Entry  Entry
 }
 
 // MarshalChain serializes a chain data to a writer
-func (c *Chain) MarshalChain(writer io.Writer) (err error) {
+func (c *Chain) MarshalChain(writer io.Writer, flags int64, whitelistTypes []string, privateTypes []string) (err error) {
+	c.lk.RLock()
+	defer c.lk.RUnlock()
 
-	var l = uint64(len(c.Headers))
-	err = binary.Write(writer, binary.LittleEndian, l)
+	if len(c.Headers) != len(c.Entries) {
+		err = ErrIncompleteChain
+		return
+	}
+
+	err = binary.Write(writer, binary.LittleEndian, flags)
 	if err != nil {
 		return err
 	}
 
-	for i, h := range c.Headers {
-		e := c.Entries[i]
-		err = writePair(writer, h, e)
+	var pairsToWrite []ChainPair
+	var lastHeaderToWrite int
+
+	for i, hdr := range c.Headers {
+		var empty []string
+		var e Entry
+
+		if i == 0 || filterPass(i, hdr, whitelistTypes, empty) {
+			e = c.Entries[i]
+
+			if (i == 0) && ((flags & ChainMarshalFlagsOmitDNA) != 0) {
+				e = &GobEntry{C: ""}
+			}
+
+			if (flags & ChainMarshalFlagsNoEntries) != 0 {
+				e = nil
+			}
+
+			if !filterPass(i, hdr, whitelistTypes, privateTypes) {
+				e = &GobEntry{C: ChainMarshalPrivateEntryRedacted}
+			}
+
+			if (flags & ChainMarshalFlagsNoHeaders) != 0 {
+				hdr = nil
+			} else {
+				lastHeaderToWrite = i
+			}
+
+			pairsToWrite = append(pairsToWrite, ChainPair{Header: hdr, Entry: e})
+		}
+	}
+
+	err = binary.Write(writer, binary.LittleEndian, int64(len(pairsToWrite)))
+	if err != nil {
+		return err
+	}
+
+	for _, pair := range pairsToWrite {
+		err = writePair(writer, pair.Header, pair.Entry)
 		if err != nil {
 			return
 		}
 	}
 
-	hash := c.Hashes[l-1]
-	err = hash.MarshalHash(writer)
-
+	if (flags & ChainMarshalFlagsNoHeaders) == 0 {
+		hash := c.Hashes[lastHeaderToWrite]
+		err = hash.MarshalHash(writer)
+	}
 	return
 }
 
@@ -290,27 +403,35 @@ func (c *Chain) MarshalChain(writer io.Writer) (err error) {
 // because for each pair (except the 0th) it adds the hash of the previous entry
 // thus it also means that you must add the last Hash after you have finished calling addPair
 func (c *Chain) addPair(header *Header, entry Entry, i int) {
-	if i > 0 {
-		s := header.HeaderLink.String()
-		h, _ := NewHash(s)
-		c.Hashes = append(c.Hashes, h)
-		c.Hmap[s] = i - 1
+	if header != nil {
+		if i > 0 {
+			s := header.HeaderLink.String()
+			h, _ := NewHash(s)
+			c.Hashes = append(c.Hashes, h)
+			c.Hmap[s] = i - 1
+		}
+		c.Headers = append(c.Headers, header)
+		c.TypeTops[header.Type] = i
+		c.Emap[header.EntryLink.String()] = i
 	}
-	c.Headers = append(c.Headers, header)
-	c.Entries = append(c.Entries, entry)
-	c.TypeTops[header.Type] = i
-	c.Emap[header.EntryLink.String()] = i
+	if entry != nil {
+		c.Entries = append(c.Entries, entry)
+	}
 }
 
 // UnmarshalChain unserializes a chain from a reader
-func UnmarshalChain(reader io.Reader) (c *Chain, err error) {
+func UnmarshalChain(hashSpec HashSpec, reader io.Reader) (flags int64, c *Chain, err error) {
 	defer func() {
 		if err != nil {
 			Debugf("error unmarshaling chain:%s", err.Error())
 		}
 	}()
-	c = NewChain()
-	var l, i uint64
+	c = NewChain(hashSpec)
+	err = binary.Read(reader, binary.LittleEndian, &flags)
+	if err != nil {
+		return
+	}
+	var l, i int64
 	err = binary.Read(reader, binary.LittleEndian, &l)
 	if err != nil {
 		return
@@ -318,20 +439,23 @@ func UnmarshalChain(reader io.Reader) (c *Chain, err error) {
 	for i = 0; i < l; i++ {
 		var header *Header
 		var e Entry
-		header, e, err = readPair(reader)
+		header, e, err = readPair(flags, reader)
 		if err != nil {
 			return
 		}
 		c.addPair(header, e, int(i))
 	}
-	// decode final hash
-	var h Hash
-	err = h.UnmarshalHash(reader)
-	if err != nil {
-		return
+
+	if (flags & ChainMarshalFlagsNoHeaders) == 0 {
+		// decode final hash
+		var h Hash
+		err = h.UnmarshalHash(reader)
+		if err != nil {
+			return
+		}
+		c.Hashes = append(c.Hashes, h)
+		c.Hmap[h.String()] = int(i - 1)
 	}
-	c.Hashes = append(c.Hashes, h)
-	c.Hmap[h.String()] = int(i - 1)
 	return
 }
 
@@ -350,43 +474,47 @@ func (c *Chain) Walk(fn WalkerFn) (err error) {
 // Validate traverses chain confirming the hashes
 // @TODO confirm that TypeLinks are also correct
 // @TODO confirm signatures
-func (c *Chain) Validate(h HashSpec) (err error) {
+func (c *Chain) Validate(skipEntries bool) (err error) {
+	c.lk.RLock()
+	defer c.lk.RUnlock()
 	l := len(c.Headers)
-	for i := l - 1; i >= 0; i-- {
+	for i := 0; i < l; i++ {
 		hd := c.Headers[i]
-		var hash Hash
 
+		var hash, nexth Hash
 		// hash the header
-		hash, _, err = hd.Sum(h)
+		hash, _, err = hd.Sum(c.hashSpec)
 		if err != nil {
 			return
 		}
-
-		var nexth Hash
-		if i == l-1 {
-			nexth = c.Hashes[i]
-		} else {
+		// we can't compare top hash to next link, because it doesn't exist yet!
+		if i < l-2 {
 			nexth = c.Headers[i+1].HeaderLink
+		} else {
+			// so get it from the Hashes (even though this could be cheated)
+			nexth = c.Hashes[i]
 		}
 
-		if !bytes.Equal(hash.H, nexth.H) {
+		if !hash.Equal(&nexth) {
 			err = fmt.Errorf("header hash mismatch at link %d", i)
 			return
 		}
 
-		var b []byte
-		b, err = c.Entries[i].Marshal()
-		if err != nil {
-			return
-		}
-		err = hash.Sum(h, b)
-		if err != nil {
-			return
-		}
+		if !skipEntries {
+			var b []byte
+			b, err = c.Entries[i].Marshal()
+			if err != nil {
+				return
+			}
+			err = hash.Sum(c.hashSpec, b)
+			if err != nil {
+				return
+			}
 
-		if !bytes.Equal(hash.H, hd.EntryLink.H) {
-			err = fmt.Errorf("entry hash mismatch at link %d", i)
-			return
+			if !bytes.Equal(hash.H, hd.EntryLink.H) {
+				err = fmt.Errorf("entry hash mismatch at link %d", i)
+				return
+			}
 		}
 	}
 	return
@@ -394,16 +522,29 @@ func (c *Chain) Validate(h HashSpec) (err error) {
 
 // String converts a chain to a textual dump of the headers and entries
 func (c *Chain) String() string {
+	c.lk.RLock()
+	defer c.lk.RUnlock()
 	l := len(c.Headers)
 	r := ""
 	for i := 0; i < l; i++ {
-		r += fmt.Sprintf("Header:%v\n", *c.Headers[i])
-		r += fmt.Sprintf("Entry:%v\n\n", c.Entries[i])
-	}
-	r += "Hashlist:\n"
-	for i := 0; i < len(c.Headers); i++ {
-		r += fmt.Sprintf("%s\n", c.Hashes[i].String())
-
+		hdr := c.Headers[i]
+		hash := c.Hashes[i]
+		r += fmt.Sprintf("%s:%s @ %v\n", hdr.Type, hash, hdr.Time)
+		r += fmt.Sprintf("    Next Header: %v\n", hdr.HeaderLink)
+		r += fmt.Sprintf("    Next %s: %v\n", hdr.Type, hdr.TypeLink)
+		r += fmt.Sprintf("    Entry: %v\n", hdr.EntryLink)
+		e := c.Entries[i]
+		switch hdr.Type {
+		case KeyEntryType:
+			r += fmt.Sprintf("       %v\n", e.(*GobEntry).C)
+		case DNAEntryType:
+			r += fmt.Sprintf("       %s\n", e.(*GobEntry).C)
+		case AgentEntryType:
+			r += fmt.Sprintf("       %v\n", e.(*GobEntry).C)
+		default:
+			r += fmt.Sprintf("       %v\n", e)
+		}
+		r += "\n"
 	}
 	return r
 }
@@ -411,4 +552,10 @@ func (c *Chain) String() string {
 // Length returns the number of entries in the chain
 func (c *Chain) Length() int {
 	return len(c.Headers)
+}
+
+// Close the chain's file
+func (c *Chain) Close() {
+	c.s.Close()
+	c.s = nil
 }

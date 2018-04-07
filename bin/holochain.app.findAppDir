@@ -1,0 +1,21 @@
+#!/bin/bash
+holochainBinDir="$GOPATH/src/github.com/metacurrency/holochain/bin"
+
+
+FILE=".hc/immutable"
+if [ ! -d $FILE ]; then
+   
+  # check if we are in root dir, in which case, die
+  [ $PWD == "/" ] && echo "HC: this does not appear to be a holochain directory" && exit 1
+   
+  # check up a directory
+   cd ..
+   . $holochainBinDir/holochain.app.findAppDir
+else
+  { [[ -f ".hc/immutable/readableName" ]] && [[ -f ".hc/immutable/machineName" ]] ; } || { echo "HC .hc is corrupt. Please try to re-init maybe? Or fix!" && exit 1 ; }
+
+  export HOLOCHAIN_APPNAME=`cat .hc/immutable/readableName`
+  export HOLOCHAIN_APP_MACHINENAME=`cat .hc/immutable/machineName`
+  export HOLOCHAIN_APPDIR=$PWD
+  export HOLOCHAIN_APPLOGDIR="$PWD/logs.holochain"
+fi

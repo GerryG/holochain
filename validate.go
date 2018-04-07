@@ -8,110 +8,145 @@
 package holochain
 
 import (
-	"encoding/json"
-	"errors"
+	"bytes"
 	"fmt"
+	. "github.com/metacurrency/holochain/hash"
 )
+
+// Package holds app specified data needed for validation (wire package)
+type Package struct {
+	Chain []byte
+}
+
+// ValidationPackage holds app specified data needed for validation. This version
+// holds the package with any chain data un-marshaled after validation for passing
+// into the app for app level validation
+type ValidationPackage struct {
+	Chain *Chain
+}
+
+const (
+
+	// Constants for the key values of the validation request object returned
+	// by validateXPkg functions
+
+	// PkgReqChain is the key who value is one of the PkgReqChainOptX masks
+	PkgReqChain = "chain"
+
+	// PkgReqEntryTypes is the key who value is an array of entry types to limit
+	// the chain to
+	PkgReqEntryTypes = "types"
+
+	// Constant mask values for PkgReqChain key of the validation request object
+
+	PkgReqChainOptNone       = 0x00
+	PkgReqChainOptHeaders    = 0x01
+	PkgReqChainOptEntries    = 0x02
+	PkgReqChainOptFull       = 0x03
+	PkgReqChainOptNoneStr    = "0"
+	PkgReqChainOptHeadersStr = "1"
+	PkgReqChainOptEntriesStr = "2"
+	PkgReqChainOptFullStr    = "3"
+)
+
+// PackagingReq holds a request from an app for data to be included in the validation response
+type PackagingReq map[string]interface{}
 
 // ValidateQuery holds the data from a validation query on the Source protocol
 type ValidateQuery struct {
 	H Hash
 }
 
-// ValidateResponse holds the response to a VALIDATE_PUT_REQUEST
+// ValidateResponse holds the response to committing validates (PUT/MOD/DEL)
 type ValidateResponse struct {
-	Entry  GobEntry
-	Header Header
-	Type   string
+	Type    string
+	Header  Header
+	Entry   GobEntry
+	Package Package
 }
 
-// ValidateLinkResponse holds the response to a VALIDATE_LINK_REQUEST
-type ValidateLinkResponse struct {
-	LinkingType string
-	Links       []Link
-}
-
-// ValidateDelResponse holds the response to a VALIDATE_DEL_REQUEST
-type ValidateDelResponse struct {
-	Type   string
-}
-
-// ValidateReceiver handles messages on the Validate protocol
-func ValidateReceiver(h *Holochain, m *Message) (response interface{}, err error) {
-	switch m.Type {
-	case VALIDATE_PUT_REQUEST:
-		h.dht.dlog.Logf("got validate put: %v", m)
-		switch t := m.Body.(type) {
-		case ValidateQuery:
-			var r ValidateResponse
-			var entry Entry
-			entry, r.Type, err = h.chain.GetEntry(t.H)
-			if err != nil {
-				return
-			}
-			r.Entry = *(entry.(*GobEntry))
-			var hd *Header
-			hd, err = h.chain.GetEntryHeader(t.H)
-			if err != nil {
-				return
-			}
-			r.Header = *hd
-			response = r
-			h.dht.dlog.Logf("responding with: %v (err=%v)", r, err)
-		default:
-			err = fmt.Errorf("expected ValidateQuery got %T", t)
+// MakePackage converts a package request into a package, loading chain data as necessary
+// this is the package that gets sent over the wire.  Chain DNA is omitted in this package
+// because it can be added at the destination and the chain will still validate.
+func MakePackage(h *Holochain, req PackagingReq) (pkg Package, err error) {
+	if f, ok := req[PkgReqChain]; ok {
+		var b bytes.Buffer
+		flags := f.(int64)
+		var mflags int64
+		if (flags & PkgReqChainOptHeaders) == 0 {
+			mflags += ChainMarshalFlagsNoHeaders
 		}
-	case VALIDATE_DEL_REQUEST:
-		h.dht.dlog.Logf("got validate del: %v", m)
-		switch t := m.Body.(type) {
-		case ValidateQuery:
-			var r ValidateDelResponse
-			_,r.Type, err = h.chain.GetEntry(t.H)
-			if err != nil {
-				return
-			}
-			response = r
-			h.dht.dlog.Logf("responding with: %v (err=%v)", r, err)
-		default:
-			err = fmt.Errorf("expected ValidateQuery got %T", t)
+		if (flags & PkgReqChainOptEntries) == 0 {
+			mflags += ChainMarshalFlagsNoEntries
 		}
-	case VALIDATE_LINK_REQUEST:
-		h.dht.dlog.Logf("got validatelink: %v", m)
-		switch t := m.Body.(type) {
-		case ValidateQuery:
-			var r ValidateLinkResponse
-			var e Entry
-			var et string
-			e, et, err = h.chain.GetEntry(t.H)
-			if err == nil {
-				var d *EntryDef
-				_, d, err = h.GetEntryDef(et)
-				if err == nil {
-					if d.DataFormat != DataFormatLinks {
-						err = errors.New("hash not of a linking entry")
-					} else {
-						var le LinksEntry
-						if err = json.Unmarshal([]byte(e.Content().(string)), &le); err == nil {
 
-							r.LinkingType = et
-							r.Links = le.Links
-						}
-					}
-				}
-			}
-			response = r
-			h.dht.dlog.Logf("responding with: %v (err=%v)", r, err)
-
-		default:
-			err = fmt.Errorf("expected ValidateQuery got %T", t)
+		var types []string
+		if t, ok := req[PkgReqEntryTypes]; ok {
+			types = t.([]string)
 		}
-	default:
-		err = fmt.Errorf("message type %d not in holochain-validate protocol", int(m.Type))
+
+		privateEntries := h.GetPrivateEntryDefs()
+		privateTypeNames := make([]string, len(privateEntries))
+		for i, def := range privateEntries {
+			privateTypeNames[i] = def.Name
+		}
+
+		h.chain.MarshalChain(&b, mflags+ChainMarshalFlagsOmitDNA, types, privateTypeNames)
+		pkg.Chain = b.Bytes()
 	}
 	return
 }
 
-// StartValidate initiates listening for Validate protocol messages on the node
-func (node *Node) StartValidate(h *Holochain) (err error) {
-	return node.StartProtocol(h, ValidateProtocol)
+// MakeValidationPackage converts a received Package into a ValidationPackage and validates
+// any chain data that was included
+func MakeValidationPackage(h *Holochain, pkg *Package) (vpkg *ValidationPackage, err error) {
+	vp := ValidationPackage{}
+	if (pkg != nil) && (pkg.Chain != nil) {
+		buf := bytes.NewBuffer(pkg.Chain)
+		var flags int64
+		flags, vp.Chain, err = UnmarshalChain(h.hashSpec, buf)
+		if err != nil {
+			return
+		}
+		if flags&ChainMarshalFlagsNoEntries == 0 {
+			// restore the chain's DNA data
+			vp.Chain.Entries[0].(*GobEntry).C = h.chain.Entries[0].(*GobEntry).C
+		}
+		if flags&ChainMarshalFlagsNoHeaders == 0 {
+			err = vp.Chain.Validate(flags&ChainMarshalFlagsNoEntries != 0)
+			if err != nil {
+				return
+			}
+		}
+	}
+	vpkg = &vp
+	return
+}
+
+// ValidateReceiver handles messages on the Validate protocol
+func ValidateReceiver(h *Holochain, msg *Message) (response interface{}, err error) {
+	var a ValidatingAction
+	switch msg.Type {
+	case VALIDATE_PUT_REQUEST:
+		a = &ActionPut{}
+	case VALIDATE_MOD_REQUEST:
+		a = &ActionMod{}
+	case VALIDATE_DEL_REQUEST:
+		a = &ActionDel{}
+	case VALIDATE_LINK_REQUEST:
+		a = &ActionLink{}
+	default:
+		err = fmt.Errorf("message type %d not in holochain-validate protocol", int(msg.Type))
+	}
+	if err == nil {
+		h.dht.dlog.Logf("got validate %s request: %v", a.Name(), msg)
+		switch t := msg.Body.(type) {
+		case ValidateQuery:
+			response, err = h.GetValidationResponse(a, t.H)
+		default:
+			err = fmt.Errorf("expected ValidateQuery got %T", t)
+		}
+	}
+	h.dht.dlog.Logf("validate responding with: %T %v (err=%v)", response, response, err)
+	return
 }

@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	ic "github.com/libp2p/go-libp2p-crypto"
+	. "github.com/metacurrency/holochain/hash"
 	"io"
 	"time"
 )
@@ -18,40 +19,50 @@ type Signature struct {
 	S []byte
 }
 
+// StatusChange records change of status of an entry in the header
+type StatusChange struct {
+	Action string // either AddAction, ModAction, or DelAction
+	Hash   Hash
+}
+
 // Header holds chain links, type, timestamp and signature
 type Header struct {
 	Type       string
 	Time       time.Time
-	HeaderLink Hash // link to previous header
+	HeaderLink Hash // link to previous headerq
 	EntryLink  Hash // link to entry
 	TypeLink   Hash // link to header of previous header of this type
 	Sig        Signature
-	//	Meta       interface{}
+	Change     StatusChange
 }
 
-var DEBUG bool
-
 // newHeader makes Header object linked to a previous Header by hash
-func newHeader(h HashSpec, now time.Time, t string, entry Entry, key ic.PrivKey, prev Hash, prevType Hash) (hash Hash, header *Header, err error) {
+func newHeader(hashSpec HashSpec, now time.Time, t string, entry Entry, privKey ic.PrivKey, prev Hash, prevType Hash, change *StatusChange) (hash Hash, header *Header, err error) {
 	var hd Header
 	hd.Type = t
+	now = now.Round(0)
 	hd.Time = now
 	hd.HeaderLink = prev
 	hd.TypeLink = prevType
+	if change != nil {
+		hd.Change = *change
+	} else {
+		hd.Change.Hash = NullHash()
+	}
 
-	hd.EntryLink, err = entry.Sum(h)
+	hd.EntryLink, err = entry.Sum(hashSpec)
 	if err != nil {
 		return
 	}
 
 	// sign the hash of the entry
-	sig, err := key.Sign(hd.EntryLink.H)
+	sig, err := privKey.Sign(hd.EntryLink.H)
 	if err != nil {
 		return
 	}
 	hd.Sig = Signature{S: sig}
 
-	hash, _, err = (&hd).Sum(h)
+	hash, _, err = (&hd).Sum(hashSpec)
 	if err != nil {
 		return
 	}
@@ -79,19 +90,26 @@ func (hd *Header) Marshal() (b []byte, err error) {
 	return
 }
 
-// MarshalHeader writes a header to a binary stream
-func MarshalHeader(writer io.Writer, hd *Header) (err error) {
+func writeStr(writer io.Writer, str string) (err error) {
 	var b []byte
-	b = []byte(hd.Type)
+	b = []byte(str)
 	l := uint8(len(b))
 	err = binary.Write(writer, binary.LittleEndian, l)
 	if err != nil {
 		return
 	}
 	err = binary.Write(writer, binary.LittleEndian, b)
+	return
+}
+
+// MarshalHeader writes a header to a binary stream
+func MarshalHeader(writer io.Writer, hd *Header) (err error) {
+	err = writeStr(writer, hd.Type)
 	if err != nil {
 		return
 	}
+
+	var b []byte
 	b, err = hd.Time.MarshalBinary()
 	err = binary.Write(writer, binary.LittleEndian, b)
 	if err != nil {
@@ -117,6 +135,16 @@ func MarshalHeader(writer io.Writer, hd *Header) (err error) {
 		return
 	}
 
+	err = writeStr(writer, hd.Change.Action)
+	if err != nil {
+		return
+	}
+
+	err = hd.Change.Hash.MarshalHash(writer)
+	if err != nil {
+		return
+	}
+
 	// write out 0 for future expansion (meta)
 	z := uint64(0)
 	err = binary.Write(writer, binary.LittleEndian, &z)
@@ -133,8 +161,7 @@ func (hd *Header) Unmarshal(b []byte, hashSize int) (err error) {
 	return
 }
 
-// UnmarshalHeader reads a Header from a binary stream
-func UnmarshalHeader(reader io.Reader, hd *Header, hashSize int) (err error) {
+func readStr(reader io.Reader) (str string, err error) {
 	var l uint8
 	err = binary.Read(reader, binary.LittleEndian, &l)
 	if err != nil {
@@ -146,9 +173,19 @@ func UnmarshalHeader(reader io.Reader, hd *Header, hashSize int) (err error) {
 	if err != nil {
 		return
 	}
+	str = string(b)
+	return
+}
 
-	hd.Type = string(b)
-	b = make([]byte, 15)
+// UnmarshalHeader reads a Header from a binary stream
+func UnmarshalHeader(reader io.Reader, hd *Header, hashSize int) (err error) {
+
+	hd.Type, err = readStr(reader)
+	if err != nil {
+		return
+	}
+
+	var b = make([]byte, 15)
 	err = binary.Read(reader, binary.LittleEndian, b)
 	if err != nil {
 		return
@@ -171,6 +208,16 @@ func UnmarshalHeader(reader io.Reader, hd *Header, hashSize int) (err error) {
 	}
 
 	err = UnmarshalSignature(reader, &hd.Sig)
+	if err != nil {
+		return
+	}
+
+	hd.Change.Action, err = readStr(reader)
+	if err != nil {
+		return
+	}
+
+	err = hd.Change.Hash.UnmarshalHash(reader)
 	if err != nil {
 		return
 	}

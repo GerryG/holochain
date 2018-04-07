@@ -2,32 +2,47 @@ package holochain
 
 import (
 	"bytes"
-	gob "encoding/gob"
+	"encoding/gob"
 	"fmt"
-	toml "github.com/BurntSushi/toml"
 	"github.com/google/uuid"
-	ic "github.com/libp2p/go-libp2p-crypto"
 	peer "github.com/libp2p/go-libp2p-peer"
+	. "github.com/metacurrency/holochain/hash"
 	. "github.com/smartystreets/goconvey/convey"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
+func TestMain(m *testing.M) {
+	os.Setenv("_HCTEST", "1")
+	InitializeHolochain()
+	os.Exit(m.Run())
+}
+
 func TestNewHolochain(t *testing.T) {
-	a, _ := NewAgent(IPFS, "Joe")
+	a, _ := NewAgent(LibP2P, "Joe", MakeTestSeed(""))
 
 	Convey("New should fill Holochain struct with provided values and new UUID", t, func() {
 
 		h := NewHolochain(a, "some/path", "json")
-		nID := string(uuid.NodeID())
-		So(nID, ShouldEqual, string(h.Id.NodeID()))
-		So(h.agent.Name(), ShouldEqual, "Joe")
+		nUUID := string(uuid.NodeID())
+		So(nUUID, ShouldEqual, string(h.nucleus.dna.UUID.NodeID())) // this nodeID is from UUID code, i.e the machine's host (not the LibP2P nodeID below)
+		So(h.agent.Identity(), ShouldEqual, "Joe")
 		So(h.agent.PrivKey(), ShouldEqual, a.PrivKey())
 		So(h.encodingFormat, ShouldEqual, "json")
 		So(h.rootPath, ShouldEqual, "some/path")
 		So(h.UIPath(), ShouldEqual, "some/path/ui")
 		So(h.DNAPath(), ShouldEqual, "some/path/dna")
 		So(h.DBPath(), ShouldEqual, "some/path/db")
+		nodeID, nodeIDStr, _ := h.agent.NodeID()
+		So(h.nodeID, ShouldEqual, nodeID)
+		So(h.nodeIDStr, ShouldEqual, nodeIDStr)
+		So(h.nodeIDStr, ShouldEqual, peer.IDB58Encode(h.nodeID))
+
+		So(h.nucleus.dna.Progenitor.Identity, ShouldEqual, "Joe")
+		pk, _ := a.PubKey().Bytes()
+		So(string(h.nucleus.dna.Progenitor.PubKey), ShouldEqual, string(pk))
 	})
 	Convey("New with Zome should fill them", t, func() {
 		z := Zome{Name: "zySampleZome",
@@ -43,24 +58,128 @@ func TestNewHolochain(t *testing.T) {
 		nz, _ := h.GetZome("zySampleZome")
 		So(nz.Description, ShouldEqual, "zome desc")
 		So(nz.Code, ShouldEqual, "zome_zySampleZome.zy")
-		So(fmt.Sprintf("%v", nz.Entries[0]), ShouldEqual, "{entryTypeFoo string    <nil>}")
-		So(fmt.Sprintf("%v", nz.Entries[1]), ShouldEqual, "{entryTypeBar zygo    <nil>}")
+		So(fmt.Sprintf("%v", nz.Entries[0]), ShouldEqual, "{entryTypeFoo string   <nil>}")
+		So(fmt.Sprintf("%v", nz.Entries[1]), ShouldEqual, "{entryTypeBar zygo   <nil>}")
 	})
 
 }
 
+func TestSetupConfig(t *testing.T) {
+	config := Config{}
+	Convey("it should set the intervals", t, func() {
+		config.Setup()
+		So(config.gossipInterval, ShouldEqual, DefaultGossipInterval)
+		So(config.bootstrapRefreshInterval, ShouldEqual, BootstrapTTL)
+		So(config.routingRefreshInterval, ShouldEqual, DefaultRoutingRefreshInterval)
+		So(config.retryInterval, ShouldEqual, DefaultRetryInterval)
+	})
+}
+
+func TestSetupLogging(t *testing.T) {
+	d, _, h := SetupTestChain("test")
+	defer CleanupTestChain(h, d)
+	Convey("it should initialize the loggers", t, func() {
+		err := h.Config.SetupLogging()
+		So(err, ShouldBeNil)
+		// test some default configurations
+		So(h.Config.Loggers.App.Enabled, ShouldBeFalse)
+		So(h.Config.Loggers.DHT.Enabled, ShouldBeFalse)
+		So(h.Config.Loggers.Gossip.Enabled, ShouldBeFalse)
+		So(h.Config.Loggers.TestFailed.w, ShouldEqual, os.Stderr)
+		// test that a sample color got initialized
+		So(fmt.Sprintf("%v", h.Config.Loggers.App.color), ShouldEqual, "&{[36] <nil>}")
+	})
+	Convey("it should initialize the loggers with env vars", t, func() {
+		os.Setenv("HCLOG_APP_ENABLE", "0")
+		os.Setenv("HCLOG_DHT_ENABLE", "1")
+		os.Setenv("HCLOG_GOSSIP_ENABLE", "true")
+		os.Setenv("HCLOG_PREFIX", "a prefix:")
+		h.Config.Loggers.DHT.Format = "%{message}"
+		err := h.Config.SetupLogging()
+		So(err, ShouldBeNil)
+		So(h.Config.Loggers.App.Enabled, ShouldBeFalse)
+		So(h.Config.Loggers.DHT.Enabled, ShouldBeTrue)
+		So(h.Config.Loggers.Gossip.Enabled, ShouldBeTrue)
+		var buf bytes.Buffer
+		h.Config.Loggers.DHT.w = &buf
+		h.Config.Loggers.DHT.Log("test")
+		So(string(buf.Bytes()), ShouldEqual, "a prefix:test\n")
+
+		// restore env
+		os.Unsetenv("HCLOG_APP_ENABLE")
+		os.Unsetenv("HCLOG_DHT_ENABLE")
+		os.Unsetenv("HCLOG_GOSSIP_ENABLE")
+		os.Unsetenv("HCLOG_PREFIX")
+		debugLog.SetPrefix("")
+		infoLog.SetPrefix("")
+	})
+}
+
+func TestDebuggingSetup(t *testing.T) {
+	d, _, h := SetupTestChain("test")
+	defer CleanupTestChain(h, d)
+
+	Convey("it should look in the environment to know if we should turn on debugging", t, func() {
+		val, yes := DebuggingRequestedViaEnv()
+		So(yes, ShouldBeFalse)
+		os.Setenv("HCDEBUG", "0")
+		val, yes = DebuggingRequestedViaEnv()
+		So(yes, ShouldBeTrue)
+		So(val, ShouldBeFalse)
+		os.Setenv("HCDEBUG", "false")
+		val, yes = DebuggingRequestedViaEnv()
+		So(yes, ShouldBeTrue)
+		So(val, ShouldBeFalse)
+		os.Setenv("HCDEBUG", "FALSE")
+		val, yes = DebuggingRequestedViaEnv()
+		So(yes, ShouldBeTrue)
+		So(val, ShouldBeFalse)
+		os.Setenv("HCDEBUG", "1")
+		val, yes = DebuggingRequestedViaEnv()
+		So(yes, ShouldBeTrue)
+		So(val, ShouldBeTrue)
+		os.Setenv("HCDEBUG", "True")
+		val, yes = DebuggingRequestedViaEnv()
+		So(yes, ShouldBeTrue)
+		So(val, ShouldBeTrue)
+		os.Setenv("HCDEBUG", "true")
+		val, yes = DebuggingRequestedViaEnv()
+		So(yes, ShouldBeTrue)
+		So(val, ShouldBeTrue)
+	})
+	Convey("it should setup debugging output", t, func() {
+		// test the output of the debug log
+		var buf bytes.Buffer
+		log := &h.Config.Loggers.Debug
+		log.w = &buf
+		var enabled = log.Enabled
+		log.Enabled = true
+
+		h.Debug("test")
+		So(string(buf.Bytes()), ShouldEqual, "HC: holochain_test.go.158: test\n")
+
+		// restore state of debug log
+		log.w = os.Stdout
+		log.Enabled = enabled
+	})
+}
+
 func TestPrepare(t *testing.T) {
 	Convey("it should fail if the requires version is incorrect", t, func() {
-		h := Holochain{RequiresVersion: Version + 1}
+		dna := DNA{DHTConfig: DHTConfig{HashType: "sha1"}, RequiresVersion: Version + 1}
+		h := Holochain{}
+		h.nucleus = NewNucleus(&h, &dna)
 		nextVersion := fmt.Sprintf("%d", Version+1)
 		err := h.Prepare()
 		So(err.Error(), ShouldEqual, "Chain requires Holochain version "+nextVersion)
 
 	})
 	Convey("it should return no err if the requires version is correct", t, func() {
-		d, _, h := setupTestChain("test")
-		defer cleanupTestDir(d)
-		h.RequiresVersion = Version
+		d, _, h := SetupTestChain("test")
+		defer CleanupTestChain(h, d)
+
+		dna := DNA{DHTConfig: DHTConfig{HashType: "sha1"}, RequiresVersion: Version}
+		h.nucleus = NewNucleus(h, &dna)
 		err := h.Prepare()
 		So(err, ShouldBeNil)
 	})
@@ -70,12 +189,16 @@ func TestPrepare(t *testing.T) {
 func TestPrepareHashType(t *testing.T) {
 
 	Convey("A bad hash type should return an error", t, func() {
-		h := Holochain{HashType: "bogus"}
+		dna := DNA{DHTConfig: DHTConfig{HashType: "bogus"}}
+		h := Holochain{}
+		h.nucleus = NewNucleus(&h, &dna)
 		err := h.PrepareHashType()
 		So(err.Error(), ShouldEqual, "Unknown hash type: bogus")
 	})
 	Convey("It should initialized fixed and variable sized hashes", t, func() {
-		h := Holochain{HashType: "sha1"}
+		dna := DNA{DHTConfig: DHTConfig{HashType: "sha1"}}
+		h := Holochain{}
+		h.nucleus = NewNucleus(&h, &dna)
 		err := h.PrepareHashType()
 		So(err, ShouldBeNil)
 		var hash Hash
@@ -83,7 +206,7 @@ func TestPrepareHashType(t *testing.T) {
 		So(err, ShouldBeNil)
 		So(hash.String(), ShouldEqual, "5duC28CW416wX42vses7TeTeRYwku9")
 
-		h.HashType = "blake2b-256"
+		h.nucleus.dna.DHTConfig.HashType = "blake2b-256"
 		err = h.PrepareHashType()
 		So(err, ShouldBeNil)
 		err = hash.Sum(h.hashSpec, []byte("test data"))
@@ -92,120 +215,12 @@ func TestPrepareHashType(t *testing.T) {
 	})
 }
 
-func TestGenDev(t *testing.T) {
-	d, s := setupTestService()
-	defer cleanupTestDir(d)
-	name := "test"
-	root := s.Path + "/" + name
-
-	Convey("we detected unconfigured holochains", t, func() {
-		f, err := s.IsConfigured(name)
-		So(f, ShouldEqual, "")
-		So(err.Error(), ShouldEqual, "No DNA file in "+root+"/"+ChainDNADir+"/")
-		_, err = s.load("test", "json")
-		So(err.Error(), ShouldEqual, "open "+root+"/"+ChainDNADir+"/"+DNAFileName+".json: no such file or directory")
-
-	})
-
-	Convey("when generating a dev holochain", t, func() {
-		h, err := s.GenDev(root, "json")
-		So(err, ShouldBeNil)
-
-		f, err := s.IsConfigured(name)
-		So(err, ShouldBeNil)
-		So(f, ShouldEqual, "json")
-
-		h, err = s.Load(name)
-		So(err, ShouldBeNil)
-
-		lh, err := s.load(name, "json")
-		So(err, ShouldBeNil)
-		So(lh.id, ShouldEqual, h.id)
-		So(lh.config.Port, ShouldEqual, DefaultPort)
-		So(h.config.PeerModeDHTNode, ShouldEqual, s.Settings.DefaultPeerModeDHTNode)
-		So(h.config.PeerModeAuthor, ShouldEqual, s.Settings.DefaultPeerModeAuthor)
-		So(h.config.BootstrapServer, ShouldEqual, s.Settings.DefaultBootstrapServer)
-
-		So(fileExists(h.DNAPath()+"/zySampleZome/profile.json"), ShouldBeTrue)
-		So(fileExists(h.UIPath()+"/index.html"), ShouldBeTrue)
-		So(fileExists(h.UIPath()+"/hc.js"), ShouldBeTrue)
-		So(fileExists(h.rootPath+"/"+ConfigFileName+".json"), ShouldBeTrue)
-
-		Convey("we should not be able re generate it", func() {
-			_, err = s.GenDev(root, "json")
-			So(err.Error(), ShouldEqual, "holochain: "+root+" already exists")
-		})
-	})
-}
-
-func TestCloneNew(t *testing.T) {
-	d, s, h0 := setupTestChain("test")
-	defer cleanupTestDir(d)
-
-	name := "test2"
-	root := s.Path + "/" + name
-
-	orig := s.Path + "/test"
-	Convey("it should create a chain from the examples directory", t, func() {
-		h, err := s.Clone(orig, root, true)
-		So(err, ShouldBeNil)
-		So(h.Name, ShouldEqual, "test2")
-		So(h.Id, ShouldNotEqual, h0.Id)
-		agent, err := LoadAgent(s.Path)
-		So(err, ShouldBeNil)
-		So(h.agent.Name(), ShouldEqual, agent.Name())
-		So(ic.KeyEqual(h.agent.PrivKey(), agent.PrivKey()), ShouldBeTrue)
-		src, _ := readFile(orig+"/dna/", "zySampleZome.zy")
-		dst, _ := readFile(h.DNAPath(), "zySampleZome.zy")
-		So(string(src), ShouldEqual, string(dst))
-		So(h.rootPath, ShouldEqual, root)
-		So(h.UIPath(), ShouldEqual, root+"/ui")
-		So(h.DNAPath(), ShouldEqual, root+"/dna")
-		So(h.DBPath(), ShouldEqual, root+"/db")
-
-		So(fileExists(h.UIPath()+"/index.html"), ShouldBeTrue)
-		So(fileExists(h.DNAPath()+"/zySampleZome/profile.json"), ShouldBeTrue)
-		So(fileExists(h.DNAPath()+"/properties_schema.json"), ShouldBeTrue)
-		So(fileExists(h.rootPath+"/"+ConfigFileName+".toml"), ShouldBeTrue)
-
-		So(fileExists(h.rootPath+"/"+ChainTestDir+"/test_0.json"), ShouldBeTrue)
-
-	})
-}
-
-func TestCloneJoin(t *testing.T) {
-	d, s, h0 := setupTestChain("test")
-	defer cleanupTestDir(d)
-
-	name := "test2"
-	root := s.Path + "/" + name
-
-	orig := s.Path + "/test"
-	Convey("it should create a chain from the examples directory", t, func() {
-		h, err := s.Clone(orig, root, false)
-		So(err, ShouldBeNil)
-		So(h.Name, ShouldEqual, "test")
-		So(h.Id, ShouldEqual, h0.Id)
-		agent, err := LoadAgent(s.Path)
-		So(err, ShouldBeNil)
-		So(h.agent.Name(), ShouldEqual, agent.Name())
-		So(ic.KeyEqual(h.agent.PrivKey(), agent.PrivKey()), ShouldBeTrue)
-		src, _ := readFile(orig+"/dna/", "zySampleZome.zy")
-		dst, _ := readFile(root, "zySampleZome.zy")
-		So(string(src), ShouldEqual, string(dst))
-		So(fileExists(h.UIPath()+"/index.html"), ShouldBeTrue)
-		So(fileExists(h.DNAPath()+"/zySampleZome/profile.json"), ShouldBeTrue)
-		So(fileExists(h.DNAPath()+"/properties_schema.json"), ShouldBeTrue)
-		So(fileExists(h.rootPath+"/"+ConfigFileName+".toml"), ShouldBeTrue)
-	})
-}
-
 func TestNewEntry(t *testing.T) {
 	d, s := setupTestService()
-	defer cleanupTestDir(d)
+	defer CleanupTestDir(d)
 	n := "test"
-	path := s.Path + "/" + n
-	h, err := s.GenDev(path, "toml")
+	path := filepath.Join(s.Path, n)
+	h, err := s.MakeTestingApp(path, "toml", InitializeDB, CloneWithNewUUID, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -309,25 +324,34 @@ func TestHeader(t *testing.T) {
 	})
 }
 
-func TestGenChain(t *testing.T) {
-	d, _, h := setupTestChain("test")
-	defer cleanupTestDir(d)
-	var err error
-	Convey("Generating DNA Hashes should re-save the DNA file", t, func() {
-		err = h.GenDNAHashes()
-		So(err, ShouldBeNil)
-		var h2 Holochain
-		_, err = toml.DecodeFile(h.DNAPath()+"/"+DNAFileName+".toml", &h2)
-		So(err, ShouldBeNil)
-		z2, _ := h2.GetZome("zySampleZome")
-		z1, _ := h.GetZome("zySampleZome")
-		So(z2.CodeHash.String(), ShouldEqual, z1.CodeHash.String())
-		b, _ := readFile(h.DNAPath()+"/zySampleZome", "profile.json")
-		var sh Hash
-		sh.Sum(h.hashSpec, b)
+func TestAddAgentEntry(t *testing.T) {
+	d, _, h := SetupTestChain("test")
+	defer CleanupTestChain(h, d)
 
-		So(z2.Entries[2].SchemaHash.String(), ShouldEqual, sh.String())
+	Convey("it should add an agent entry to the chain", t, func() {
+		headerHash, agentHash, err := h.AddAgentEntry(&FakeRevocation{data: "some revocation data"})
+		So(err, ShouldBeNil)
+
+		hdr, err := h.chain.Get(headerHash)
+		So(err, ShouldBeNil)
+
+		So(hdr.EntryLink.String(), ShouldEqual, agentHash.String())
+
+		entry, _, err := h.chain.GetEntry(agentHash)
+		So(err, ShouldBeNil)
+
+		var a = entry.Content().(AgentEntry)
+		So(a.Identity, ShouldEqual, h.agent.Identity())
+		pk, _ := h.agent.PubKey().Bytes()
+		So(string(a.PublicKey), ShouldEqual, string(pk))
+		So(string(a.Revocation), ShouldEqual, "some revocation data")
 	})
+}
+
+func TestGenChain(t *testing.T) {
+	d, _, h := SetupTestChain("test")
+	defer CleanupTestChain(h, d)
+	var err error
 
 	Convey("before GenChain call DNAHash call should fail", t, func() {
 		h := h.DNAHash()
@@ -348,8 +372,10 @@ func TestGenChain(t *testing.T) {
 		So(err, ShouldBeNil)
 		header = *hdr
 		var a = entry.Content().(AgentEntry)
-		So(a.Name, ShouldEqual, h.agent.Name())
-		//So(k.Key,ShouldEqual,"something?") // test that key got correctly retrieved
+		So(a.Identity, ShouldEqual, h.agent.Identity())
+		pk, _ := h.agent.PubKey().Bytes()
+		So(string(a.PublicKey), ShouldEqual, string(pk))
+		So(string(a.Revocation), ShouldEqual, "")
 	})
 
 	var dnaHash Hash
@@ -378,8 +404,8 @@ func TestGenChain(t *testing.T) {
 }
 
 func TestWalk(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	d, _, h := PrepareTestChain("test")
+	defer CleanupTestChain(h, d)
 
 	// add an extra link onto the chain
 	entryTypeFoo := `(message (from "art") (to "eric") (contents "test"))`
@@ -408,114 +434,10 @@ func TestWalk(t *testing.T) {
 	})
 }
 
-func TestValidate(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
-
-	// add an extra link onto the chain
-	entryTypeFoo := `(message (from "art") (to "eric") (contents "test"))`
-	now := time.Unix(1, 1) // pick a constant time so the test will always work
-	e := GobEntry{C: entryTypeFoo}
-	_, _, err := h.NewEntry(now, "entryTypeFoo", &e)
-	if err != nil {
-		panic(err)
-	}
-	Convey("validate should check the hashes of the headers, and optionally of the entries", t, func() {
-		//	Convey("This isn't yet fully implemented", nil)
-		valid, err := h.Validate(false)
-		So(err, ShouldBeNil)
-		So(valid, ShouldEqual, true)
-	})
-}
-
-func TestValidatePrepare(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
-
-	Convey("it should fail if a validator doesn't exist for the entry type", t, func() {
-		hdr := mkTestHeader("bogusType")
-		d, _, n, err := h.ValidatePrepare(hdr.Type, &GobEntry{C: "foo"}, []peer.ID{h.id})
-		So(err.Error(), ShouldEqual, "no definition for entry type: bogusType")
-		So(d, ShouldBeNil)
-		So(n, ShouldBeNil)
-	})
-	Convey("a nil entry is invalid", t, func() {
-		hdr := mkTestHeader("evenNumbers")
-		_, _, _, err := h.ValidatePrepare(hdr.Type, nil, []peer.ID{h.id})
-		So(err.Error(), ShouldEqual, "nil entry invalid")
-	})
-
-	profile := `{"firstName":"Eric","lastName":"H-B"}`
-	hdr := mkTestHeader("profile")
-	h.Prepare()
-	Convey("successful prepare should convert sources and return a nucleus", t, func() {
-		_, srcs, _, err := h.ValidatePrepare(hdr.Type, &GobEntry{C: profile}, []peer.ID{h.id})
-		So(err, ShouldBeNil)
-		So(fmt.Sprintf("%v", srcs), ShouldEqual, "["+peer.IDB58Encode(h.id)+"]")
-	})
-
-	Convey("validate on a schema based entry should check entry against the schema", t, func() {
-		profile = `{"firstName":"Eric"}` // missing required lastName
-		_, _, _, err := h.ValidatePrepare(hdr.Type, &GobEntry{C: profile}, []peer.ID{h.id})
-		So(err, ShouldNotBeNil)
-		So(err.Error(), ShouldEqual, "validator profile.json failed: object property 'lastName' is required")
-	})
-
-	hdr = mkTestHeader("rating")
-	Convey("validate on a links entry should fail if not formatted correctly", t, func() {
-		_, _, _, err := h.ValidatePrepare(hdr.Type, &GobEntry{C: "badjson"}, []peer.ID{h.id})
-		So(err, ShouldNotBeNil)
-		So(err.Error(), ShouldEqual, "invalid links entry, invalid json: invalid character 'b' looking for beginning of value")
-
-		_, _, _, err = h.ValidatePrepare(hdr.Type, &GobEntry{C: `{}`}, []peer.ID{h.id})
-		So(err, ShouldNotBeNil)
-		So(err.Error(), ShouldEqual, "invalid links entry: you must specify at least one link")
-
-		_, _, _, err = h.ValidatePrepare(hdr.Type, &GobEntry{C: `{"Links":[{}]}`}, []peer.ID{h.id})
-		So(err, ShouldNotBeNil)
-		So(err.Error(), ShouldEqual, "invalid links entry: missing Base")
-
-		_, _, _, err = h.ValidatePrepare(hdr.Type, &GobEntry{C: `{"Links":[{"Base":"x","Link":"x","Tag":"sometag"}]}`}, []peer.ID{h.id})
-		So(err, ShouldNotBeNil)
-		So(err.Error(), ShouldEqual, "invalid links entry: Base multihash too short. must be > 3 bytes")
-		_, _, _, err = h.ValidatePrepare(hdr.Type, &GobEntry{C: `{"Links":[{"Base":"QmdRXz53TVT9qBYfbXctHyy2GpTNa6YrpAy6ZcDGG8Xhc5","Link":"x","Tag":"sometag"}]}`}, []peer.ID{h.id})
-		So(err, ShouldNotBeNil)
-		So(err.Error(), ShouldEqual, "invalid links entry: Link multihash too short. must be > 3 bytes")
-
-		_, _, _, err = h.ValidatePrepare(hdr.Type, &GobEntry{C: `{"Links":[{"Base":"QmdRXz53TVT9qBYfbXctHyy2GpTNa6YrpAy6ZcDGG8Xhc5","Link":"QmdRXz53TVT9qBYfbXctHyy2GpTNa6YrpAy6ZcDGG8Xhc5"}]}`}, []peer.ID{h.id})
-		So(err, ShouldNotBeNil)
-		So(err.Error(), ShouldEqual, "invalid links entry: missing Tag")
-	})
-}
-
-func TestValidateCommit(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
-	var err error
-
-	Convey("it should fail if a validator doesn't exist for the entry type", t, func() {
-		hdr := mkTestHeader("bogusType")
-		_, err = h.ValidateCommit(hdr.Type, &GobEntry{C: "foo"}, &hdr, []peer.ID{h.id})
-		So(err.Error(), ShouldEqual, "no definition for entry type: bogusType")
-	})
-
-	Convey("a valid entry validates", t, func() {
-		hdr := mkTestHeader("evenNumbers")
-		var d *EntryDef
-		d, err = h.ValidateCommit(hdr.Type, &GobEntry{C: "2"}, &hdr, []peer.ID{h.id})
-		So(err, ShouldBeNil)
-		So(fmt.Sprintf("%v", d), ShouldEqual, "&{evenNumbers zygo   public <nil>}")
-	})
-	Convey("an invalid entry doesn't validate", t, func() {
-		hdr := mkTestHeader("evenNumbers")
-		_, err = h.ValidateCommit(hdr.Type, &GobEntry{C: "1"}, &hdr, []peer.ID{h.id})
-		So(err.Error(), ShouldEqual, "Invalid entry: 1")
-	})
-}
-
 func TestGetZome(t *testing.T) {
-	d, _, h := setupTestChain("test")
-	defer cleanupTestDir(d)
+	d, _, h := SetupTestChain("test")
+	defer CleanupTestChain(h, d)
+
 	Convey("it should fail if the zome isn't defined in the DNA", t, func() {
 		_, err := h.GetZome("bogusZome")
 		So(err.Error(), ShouldEqual, "unknown zome: bogusZome")
@@ -527,108 +449,320 @@ func TestGetZome(t *testing.T) {
 	})
 }
 
-func TestGetFunctionDef(t *testing.T) {
-	d, _, h := setupTestChain("test")
-	defer cleanupTestDir(d)
-	z, _ := h.GetZome("zySampleZome")
+func TestMakeRibosome(t *testing.T) {
+	d, _, h := SetupTestChain("test")
+	defer CleanupTestChain(h, d)
 
-	Convey("it should fail if the fn isn't defined in the DNA", t, func() {
-		_, err := h.GetFunctionDef(z, "foo")
-		So(err.Error(), ShouldEqual, "unknown exposed function: foo")
-	})
-	Convey("it should return the Fn structure of a defined fn", t, func() {
-		fn, err := h.GetFunctionDef(z, "getDNA")
-		So(err, ShouldBeNil)
-		So(fn.Name, ShouldEqual, "getDNA")
-	})
-}
-
-func TestMakeNucleus(t *testing.T) {
-	d, _, h := setupTestChain("test")
-	defer cleanupTestDir(d)
 	Convey("it should fail if the zome isn't defined in the DNA", t, func() {
-		_, _, err := h.MakeNucleus("bogusZome")
+		_, _, err := h.MakeRibosome("bogusZome")
 		So(err.Error(), ShouldEqual, "unknown zome: bogusZome")
 	})
-	Convey("it should make a nucleus based on the type and return the zome def", t, func() {
-		v, zome, err := h.MakeNucleus("zySampleZome")
+	Convey("it should make a ribosome based on the type and return the zome def", t, func() {
+		v, zome, err := h.MakeRibosome("zySampleZome")
 		So(err, ShouldBeNil)
 		So(zome.Name, ShouldEqual, "zySampleZome")
-		z := v.(*ZygoNucleus)
+		z := v.(*ZygoRibosome)
 		_, err = z.env.Run()
 		So(err, ShouldBeNil)
 	})
 }
 
 func TestCall(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	d, _, h := PrepareTestChain("test")
+	defer CleanupTestChain(h, d)
+
 	Convey("it should call the exposed function", t, func() {
-		result, err := h.Call("zySampleZome", "testStrFn1", "arg1 arg2")
+		result, err := h.Call("zySampleZome", "testStrFn1", "arg1 arg2", ZOME_EXPOSURE)
 		So(err, ShouldBeNil)
 		So(result.(string), ShouldEqual, "result: arg1 arg2")
 
-		result, err = h.Call("zySampleZome", "addEven", "42")
+		result, err = h.Call("zySampleZome", "addEven", "42", ZOME_EXPOSURE)
 		So(err, ShouldBeNil)
 
 		ph := h.chain.Top().EntryLink
 		So(result.(string), ShouldEqual, ph.String())
 
-		//_, err = h.Call("zySampleZome", "addEven", "41")
-		//So(err.Error(), ShouldEqual, "Error calling 'commit': Invalid entry: 41")
+		_, err = h.Call("zySampleZome", "addEven", "41", ZOME_EXPOSURE)
+		So(err.Error(), ShouldEqual, "Error calling 'commit': Validation Failed")
 	})
-}
-
-func TestLoadTestFiles(t *testing.T) {
-	d, _, h := setupTestChain("test")
-	defer cleanupTestDir(d)
-
-	Convey("it should fail if there's no test data", t, func() {
-		tests, err := LoadTestFiles(d)
-		So(tests, ShouldBeNil)
-		So(err.Error(), ShouldEqual, "no test files found in: "+d)
+	Convey("it should fail calls to functions not exposed to the given context", t, func() {
+		_, err := h.Call("zySampleZome", "testStrFn1", "arg1 arg2", PUBLIC_EXPOSURE)
+		So(err.Error(), ShouldEqual, "function not available")
 	})
-
-	Convey("it should load test files", t, func() {
-		path := h.rootPath + "/" + ChainTestDir
-		tests, err := LoadTestFiles(path)
-		So(err, ShouldBeNil)
-		So(len(tests), ShouldEqual, 8)
-	})
-
 }
 
 func TestCommit(t *testing.T) {
-	d, _, h := prepareTestChain("test")
-	defer cleanupTestDir(d)
+	d, _, h := PrepareTestChain("test")
+	defer CleanupTestChain(h, d)
 
 	// add an entry onto the chain
-	hash, err := h.Commit("oddNumbers", "7")
-	if err != nil {
-		panic(err)
-	}
-	if err := h.dht.simHandleChangeReqs(); err != nil {
-		panic(err)
-	}
+	hash := commit(h, "oddNumbers", "7")
 
 	Convey("publicly shared entries should generate a put", t, func() {
-		err := h.dht.exists(hash)
+		err := h.dht.exists(hash, StatusLive)
 		So(err, ShouldBeNil)
 	})
 
-	profileHash, err := h.Commit("profile", `{"firstName":"Zippy","lastName":"Pinhead"}`)
+	profileHash := commit(h, "profile", `{"firstName":"Zippy","lastName":"Pinhead"}`)
+
+	Convey("it should attach links after commit of Links entry", t, func() {
+		commit(h, "rating", fmt.Sprintf(`{"Links":[{"Base":"%s","Link":"%s","Tag":"4stars"}]}`, hash.String(), profileHash.String()))
+
+		results, err := h.dht.getLinks(hash, "4stars", StatusLive)
+		So(err, ShouldBeNil)
+		So(fmt.Sprintf("%v", results), ShouldEqual, fmt.Sprintf("[{QmYeinX5vhuA91D3v24YbgyLofw9QAxY6PoATrBHnRwbtt    %s}]", h.nodeIDStr))
+	})
+}
+
+func TestQuery(t *testing.T) {
+	d, _, h := PrepareTestChain("test")
+	defer CleanupTestChain(h, d)
+
+	commit(h, "profile", `{"firstName":"Pebbles","lastName":"Flintstone"}`)
+	hash1 := commit(h, "oddNumbers", "7")
+	commit(h, "secret", "foo")
+	hash2 := commit(h, "oddNumbers", "9")
+	commit(h, "secret", "bar")
+	commit(h, "secret", "baz")
+	commit(h, "profile", `{"firstName":"Zippy","lastName":"Pinhead"}`)
+	commit(h, "profile", `{"firstName":"Zerbina","lastName":"Pinhead"}`)
+
+	Convey("query with no options should return entire chain entries only", t, func() {
+		results, err := h.Query(nil)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 10)
+		So(results[0].Header.Type, ShouldEqual, DNAEntryType)
+		So(results[1].Header.Type, ShouldEqual, AgentEntryType)
+		So(results[2].Entry.Content(), ShouldEqual, `{"firstName":"Pebbles","lastName":"Flintstone"}`)
+		So(results[3].Entry.Content(), ShouldEqual, "7")
+		So(results[4].Entry.Content(), ShouldEqual, "foo")
+		So(results[5].Entry.Content(), ShouldEqual, "9")
+		So(results[6].Entry.Content(), ShouldEqual, "bar")
+		So(results[7].Entry.Content(), ShouldEqual, "baz")
+		So(results[8].Entry.Content(), ShouldEqual, `{"firstName":"Zippy","lastName":"Pinhead"}`)
+		So(results[9].Entry.Content(), ShouldEqual, `{"firstName":"Zerbina","lastName":"Pinhead"}`)
+	})
+	Convey("query with order should reverse the order", t, func() {
+		results, err := h.Query(&QueryOptions{Order: QueryOrder{Ascending: true}})
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 10)
+		So(results[9].Header.Type, ShouldEqual, DNAEntryType)
+		So(results[8].Header.Type, ShouldEqual, AgentEntryType)
+		So(results[7].Entry.Content(), ShouldEqual, `{"firstName":"Pebbles","lastName":"Flintstone"}`)
+		So(results[6].Entry.Content(), ShouldEqual, "7")
+		So(results[5].Entry.Content(), ShouldEqual, "foo")
+		So(results[4].Entry.Content(), ShouldEqual, "9")
+		So(results[3].Entry.Content(), ShouldEqual, "bar")
+		So(results[2].Entry.Content(), ShouldEqual, "baz")
+		So(results[1].Entry.Content(), ShouldEqual, `{"firstName":"Zippy","lastName":"Pinhead"}`)
+		So(results[0].Entry.Content(), ShouldEqual, `{"firstName":"Zerbina","lastName":"Pinhead"}`)
+	})
+
+	Convey("query with with count and page should select items", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.Count = 2
+		q.Constrain.Page = 2 // zero based
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 2)
+		So(results[0].Entry.Content(), ShouldEqual, "foo")
+		So(results[1].Entry.Content(), ShouldEqual, "9")
+	})
+
+	Convey("query with with count and page partially past end should select items", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.Count = 4
+		q.Constrain.Page = 2 // zero based
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 2)
+		So(results[0].Entry.Content(), ShouldEqual, `{"firstName":"Zippy","lastName":"Pinhead"}`)
+		So(results[1].Entry.Content(), ShouldEqual, `{"firstName":"Zerbina","lastName":"Pinhead"}`)
+	})
+
+	Convey("query with with count and page past end should be empty", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.Count = 10
+		q.Constrain.Page = 1 // zero based
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 0)
+	})
+
+	Convey("query with entry type options should return that type only", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.EntryTypes = []string{"oddNumbers"}
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 2)
+		So(results[0].Entry.Content(), ShouldEqual, "7")
+		So(results[1].Entry.Content(), ShouldEqual, "9")
+	})
+	Convey("query with multiple entry type options should return those types only", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.EntryTypes = []string{"oddNumbers", "secret"}
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 5)
+		So(results[0].Entry.Content(), ShouldEqual, "7")
+		So(results[1].Entry.Content(), ShouldEqual, "foo")
+		So(results[2].Entry.Content(), ShouldEqual, "9")
+		So(results[3].Entry.Content(), ShouldEqual, "bar")
+		So(results[4].Entry.Content(), ShouldEqual, "baz")
+	})
+	Convey("query with hash options should return only hashes", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.EntryTypes = []string{"oddNumbers"}
+		q.Return.Hashes = true
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(results[0].Header.EntryLink.String(), ShouldEqual, hash1.String())
+		So(results[1].Header.EntryLink.String(), ShouldEqual, hash2.String())
+		So(results[0].Entry, ShouldBeNil)
+		So(results[1].Entry, ShouldBeNil)
+	})
+	Convey("query with equals constraint", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.EntryTypes = []string{"secret"}
+		q.Constrain.Equals = "foo"
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 1)
+		So(results[0].Entry.Content(), ShouldEqual, "foo")
+	})
+	Convey("query with contains constraint", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.EntryTypes = []string{"secret"}
+		q.Constrain.Contains = "o"
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 1)
+		So(results[0].Entry.Content(), ShouldEqual, "foo")
+	})
+	Convey("query with matches constraint", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.EntryTypes = []string{"secret"}
+		q.Constrain.Matches = ".a."
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 2)
+		So(results[0].Entry.Content(), ShouldEqual, "bar")
+		So(results[1].Entry.Content(), ShouldEqual, "baz")
+	})
+	Convey("query with equals field constraint", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.EntryTypes = []string{"profile"}
+		q.Constrain.Equals = `{"firstName":"Zippy"}`
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 1)
+		So(results[0].Entry.Content(), ShouldEqual, `{"firstName":"Zippy","lastName":"Pinhead"}`)
+	})
+	Convey("query with equals multiple field constraint", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.EntryTypes = []string{"profile"}
+		q.Constrain.Equals = `{"firstName":"Zippy","lastName":"Flintstone"}`
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 2)
+		So(results[0].Entry.Content(), ShouldEqual, `{"firstName":"Pebbles","lastName":"Flintstone"}`)
+		So(results[1].Entry.Content(), ShouldEqual, `{"firstName":"Zippy","lastName":"Pinhead"}`)
+
+	})
+	Convey("query with contains field constraint", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.EntryTypes = []string{"profile"}
+		q.Constrain.Contains = `{"firstName":"Z"}`
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 2)
+		So(results[0].Entry.Content(), ShouldEqual, `{"firstName":"Zippy","lastName":"Pinhead"}`)
+		So(results[1].Entry.Content(), ShouldEqual, `{"firstName":"Zerbina","lastName":"Pinhead"}`)
+	})
+	Convey("query with matches field constraint", t, func() {
+		q := &QueryOptions{}
+		q.Constrain.EntryTypes = []string{"profile"}
+		q.Constrain.Matches = `{"firstName":".*b"}`
+		results, err := h.Query(q)
+		So(err, ShouldBeNil)
+		So(len(results), ShouldEqual, 2)
+		So(results[0].Entry.Content(), ShouldEqual, `{"firstName":"Pebbles","lastName":"Flintstone"}`)
+		So(results[1].Entry.Content(), ShouldEqual, `{"firstName":"Zerbina","lastName":"Pinhead"}`)
+	})
+}
+
+func TestGetEntryDef(t *testing.T) {
+	d, _, h := SetupTestChain("test")
+	defer CleanupTestDir(d)
+	Convey("it should fail on bad entry types", t, func() {
+		_, _, err := h.GetEntryDef("foobar")
+		So(err, ShouldBeError)
+		So(err.Error(), ShouldEqual, "no definition for entry type: foobar")
+	})
+	Convey("it should get entry definitions", t, func() {
+		zome, def, err := h.GetEntryDef("evenNumbers")
+		So(err, ShouldBeNil)
+		So(zome.Name, ShouldEqual, "zySampleZome")
+		So(fmt.Sprintf("%v", def), ShouldEqual, "&{evenNumbers zygo public  <nil>}")
+	})
+	Convey("it should get sys entry definitions", t, func() {
+		zome, def, err := h.GetEntryDef(DNAEntryType)
+		So(err, ShouldBeNil)
+		So(zome, ShouldBeNil)
+		So(def, ShouldEqual, DNAEntryDef)
+		zome, def, err = h.GetEntryDef(AgentEntryType)
+		So(err, ShouldBeNil)
+		So(zome, ShouldBeNil)
+		So(def, ShouldEqual, AgentEntryDef)
+		zome, def, err = h.GetEntryDef(KeyEntryType)
+		So(err, ShouldBeNil)
+		So(zome, ShouldBeNil)
+		So(def, ShouldEqual, KeyEntryDef)
+	})
+	Convey("it should get private entry definition", t, func() {
+		zome, def, err := h.GetEntryDef("privateData")
+		So(err, ShouldBeNil)
+		So(zome, ShouldNotBeNil)
+		So(def, ShouldNotBeNil)
+	})
+}
+
+func TestGetPrivateEntryDefs(t *testing.T) {
+	d, _, h := SetupTestChain("test")
+	defer CleanupTestDir(d)
+	Convey("it should contain only private entry definition", t, func() {
+		_, privateData, _ := h.GetEntryDef("privateData")
+		privateDefs := h.GetPrivateEntryDefs()
+		So(len(privateDefs), ShouldEqual, 1)
+		So(privateDefs[0].Name, ShouldEqual, privateData.Name)
+	})
+}
+
+//func TestDNADefaults(t *testing.T) {
+//	h, err := DecodeDNA(strings.NewReader( [[Zomes]]`
+//Name = "test"
+//Description = "test-zome"
+//RibosomeType = "zygo"`), "toml")
+//	if err != nil {
+//		return
+//	}
+//	Convey("it should substitute default values", t, func() {
+//		So(h.Zomes[0].Code, ShouldEqual, "test.zy")
+//	})
+//}
+
+func commit(h *Holochain, entryType, entryStr string) (entryHash Hash) {
+	entry := GobEntry{C: entryStr}
+
+	r, err := NewCommitAction(entryType, &entry).Do(h)
 	if err != nil {
 		panic(err)
 	}
-
-	Convey("it should attach links after commit of Links entry", t, func() {
-		_, err := h.Commit("rating", fmt.Sprintf(`{"Links":[{"Base":"%s","Link":"%s","Tag":"4stars"}]}`, hash.String(), profileHash.String()))
-		So(err, ShouldBeNil)
-		if err := h.dht.simHandleChangeReqs(); err != nil {
-			panic(err)
-		}
-		results, err := h.dht.getLink(hash, "4stars")
-		So(err, ShouldBeNil)
-		So(fmt.Sprintf("%v", results), ShouldEqual, "[{QmYeinX5vhuA91D3v24YbgyLofw9QAxY6PoATrBHnRwbtt }]")
-	})
+	if r != nil {
+		entryHash = r.(Hash)
+	}
+	if err != nil {
+		panic(err)
+	}
+	return
 }

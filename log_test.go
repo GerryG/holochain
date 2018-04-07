@@ -60,7 +60,7 @@ func TestNewLog(t *testing.T) {
 		}
 
 		c, f := l.setupColor("x")
-		So(c, ShouldEqual, nil)
+		So(c, ShouldBeNil)
 		So(f, ShouldEqual, "x")
 
 		c, f = l.setupColor("prefix%{color:red}%{message}")
@@ -71,4 +71,38 @@ func TestNewLog(t *testing.T) {
 		now := time.Unix(1, 1)
 		So(l._parse("fish", &now), ShouldEqual, now.Format(time.Stamp)+":fish")
 	})
+
+	Convey("it should log with a prefix", t, func() {
+		var buf bytes.Buffer
+		l := Logger{
+			Enabled: true,
+		}
+		l.New(&buf)
+
+		l.Log("onefish")
+		l.SetPrefix("[PREFIX]")
+		l.Log("twofish")
+		l.SetPrefix("[COLOR PREFIX]")
+		l.Log("threefish")
+		So(buf.String(), ShouldEqual, "onefish\n[PREFIX]twofish\n[COLOR PREFIX]threefish\n")
+	})
+
+	Convey("it should handle file name and line number", t, func() {
+		var buf bytes.Buffer
+		l := Logger{
+			Enabled: true,
+			Format:  "%{file}.%{line}:%{message}",
+		}
+		l.New(&buf)
+		doDebug(l, "fish")
+		So(buf.String(), ShouldEqual, "log_test.go.97:fish\n")
+	})
+
+}
+
+// we do this because in the case of file & line needs to know how many
+// calls back up the stack to use for calculating the line number and we
+// allways have a wrapper function around the log
+func doDebug(l Logger, m string) {
+	l.Log(m)
 }
