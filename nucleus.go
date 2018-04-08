@@ -10,24 +10,6 @@ import (
 	. "github.com/metacurrency/holochain/hash"
 )
 
-type NucleusFactory func(h *Holochain, code string) (Nucleus, error)
-
-const (
-	// calling types
-	STRING_CALLING = "string"
-	JSON_CALLING   = "json"
-
-	// types of "exposure"
-	PUBLIC_EXPOSURE  = "public"
-	PRIVATE_EXPOSURE = "private"
-
-	// these constants are for a removed feature, see ChangeAppProperty
-	// @TODO figure out how to remove code over time that becomes obsolete, i.e. for long-dead changes
-	ID_PROPERTY         = "_id"
-	AGENT_ID_PROPERTY   = "_agent_id"
-	AGENT_NAME_PROPERTY = "_agent_name"
-)
-
 type DNA struct {
 	Version                   int
 	UUID                      uuid.UUID
@@ -58,24 +40,6 @@ type Nucleus struct {
 	alog *Logger // the app logger
 }
 
-<<<<<<< HEAD
-// FunctionDef holds the name and calling type of an DNA exposed function
-type FunctionDef struct {
-	Name        string
-	CallingType string
-	ExposedTo   string
-}
-
-// Nucleus type abstracts the functions of code execution environments
-type Nucleus interface {
-	Type() string
-	ValidateCommit(def *EntryDef, entry Entry, header *Header, sources []string) error
-	ValidatePut(def *EntryDef, entry Entry, header *Header, sources []string) error
-	ValidateDel(entryType string, hash string, sources []string) error
-	ValidateLink(linkingEntryType string, baseHash string, linkHash string, tag string, sources []string) error
-	ChainGenesis() error
-	Call(fn *FunctionDef, params interface{}) (interface{}, error)
-=======
 func (n *Nucleus) DNA() (dna *DNA) {
 	return n.dna
 }
@@ -88,7 +52,6 @@ func NewNucleus(h *Holochain, dna *DNA) *Nucleus {
 		alog: &h.Config.Loggers.App,
 	}
 	return &nucleus
->>>>>>> master
 }
 
 func (n *Nucleus) RunGenesis() (err error) {
